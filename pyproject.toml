@@ -1,0 +1,39 @@
+[project]
+name = "web-backend"
+version = "0.1.0"
+description = "FastAPI backend application"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "psycopg[binary]>=3.2.0",
+    "psycopg2-binary>=2.9.10",
+    "pydantic[email]>=2.9.0",
+    "pydantic-settings>=2.6.0",
+    "pwdlib[argon2]>=0.2.1",
+    "pyjwt>=2.10.0",
+    "sqlalchemy>=2.0.36",
+    "ulid-py>=1.1.0",
+    "uvicorn[standard]>=0.32.0",
+    "yoyo-migrations>=9.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx>=0.27.0",
+    "pytest>=8.3.0",
+    "ruff>=0.8.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
