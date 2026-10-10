@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     app_name: str = "Web Backend"
     app_env: str = "development"
     debug: bool = False
+    timezone: str = "America/Sao_Paulo"
     secret_key: str = "change-this-secret-key"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
