@@ -19,7 +19,7 @@ cp .env.example .env
 ## Run locally
 
 ```bash
-uvicorn app.main:app --reload
+make run
 ```
 
 The API will be available at:
@@ -65,6 +65,9 @@ python -c "from app.core.migrations import run_migrations; run_migrations()"
 - `POST /auth/login` returns a JWT access token from an `email` and `password` JSON body.
 - `GET /auth/me` returns the authenticated user.
 - `PATCH /auth/users/{user_id}/role` changes a user role when the authenticated user has permission.
+- `POST /appointments` creates an appointment after checking doctor and patient roles and existing appointments.
+
+Appointment datetimes must include timezone information. The backend stores appointment times normalized to UTC.
 
 ## Auth Roles
 

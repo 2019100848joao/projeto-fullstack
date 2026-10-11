@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.modules.auth.enums import UserRole
 from app.modules.auth.models import User
+from app.modules.auth.permissions import PermissionService
 from app.modules.auth.repository import UserRepository
 from app.modules.auth.service import AuthService
 
@@ -24,7 +25,7 @@ BearerCredentials = Annotated[
 
 
 def get_auth_service(db: DbSession) -> AuthService:
-    return AuthService(UserRepository(db))
+    return AuthService(UserRepository(db), PermissionService())
 
 
 def get_current_user(
@@ -66,10 +67,11 @@ CurrentUserDep = Annotated[User, Depends(get_current_user)]
 
 
 def require_roles(*allowed_roles: UserRole) -> Callable[[User], User]:
-    allowed_role_values = {role.value for role in allowed_roles}
+    permissions = PermissionService()
+    role_set = set(allowed_roles)
 
     def dependency(current_user: CurrentUserDep) -> User:
-        if current_user.role not in allowed_role_values:
+        if not permissions.user_has_any_role(current_user, role_set):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have permission to access this resource",

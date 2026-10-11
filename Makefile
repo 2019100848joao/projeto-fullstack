@@ -1,8 +1,7 @@
 PYTHON := .venv/bin/python
-PIP := .venv/bin/pip
-UVICORN := .venv/bin/uvicorn
-PYTEST := .venv/bin/pytest
-RUFF := .venv/bin/ruff
+UVICORN := $(PYTHON) -m uvicorn
+PYTEST := $(PYTHON) -m pytest
+RUFF := $(PYTHON) -m ruff
 
 .PHONY: help setup install run test lint format check db-up db-down db-logs migrate clean
 
@@ -30,7 +29,7 @@ install:
 	$(PYTHON) -m pip install -e ".[dev]"
 
 run:
-	$(UVICORN) app.main:app --reload
+	$(UVICORN) app.main:app --reload --reload-dir app
 
 test:
 	$(PYTEST)

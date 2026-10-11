@@ -8,28 +8,19 @@ from app.modules.auth.exceptions import (
     UserNotFoundError,
 )
 from app.modules.auth.models import User
+from app.modules.auth.permissions import PermissionService
 from app.modules.auth.repository import UserRepository
 from app.modules.auth.schemas import Token, UserCreate
 
-ROLE_CHANGE_RULES: dict[UserRole, dict[UserRole, set[UserRole]]] = {
-    UserRole.ADMIN: {
-        UserRole.ADMIN: set(UserRole),
-        UserRole.PATIENT: set(UserRole),
-        UserRole.DOCTOR: set(UserRole),
-        UserRole.ATTENDANT: set(UserRole),
-    },
-    UserRole.DOCTOR: {
-        UserRole.ATTENDANT: {UserRole.PATIENT, UserRole.ATTENDANT},
-    },
-    UserRole.ATTENDANT: {
-        UserRole.PATIENT: {UserRole.PATIENT, UserRole.ATTENDANT},
-    },
-}
-
 
 class AuthService:
-    def __init__(self, repository: UserRepository) -> None:
+    def __init__(
+        self,
+        repository: UserRepository,
+        permissions: PermissionService | None = None,
+    ) -> None:
         self.repository = repository
+        self.permissions = permissions or PermissionService()
 
     def register(self, user_create: UserCreate) -> User:
         existing_user = self.repository.get_by_email(user_create.email)
@@ -64,11 +55,11 @@ class AuthService:
         if target_user is None:
             raise UserNotFoundError
 
-        current_role = UserRole(current_user.role)
-        target_role = UserRole(target_user.role)
-        allowed_target_roles = ROLE_CHANGE_RULES.get(current_role, {}).get(target_role)
-
-        if allowed_target_roles is None or new_role not in allowed_target_roles:
+        if not self.permissions.can_change_user_role(
+            current_user=current_user,
+            target_user=target_user,
+            new_role=new_role,
+        ):
             raise RoleChangeNotAllowedError
 
         return self.repository.update_role(target_user, new_role)
