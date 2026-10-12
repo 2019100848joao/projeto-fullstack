@@ -16,6 +16,12 @@ class UserRepository:
         statement = select(User).where(User.email == email)
         return self.db.scalar(statement)
 
+    def list(self, *, role: UserRole | None = None) -> list[User]:
+        statement = select(User).order_by(User.full_name, User.id)
+        if role is not None:
+            statement = statement.where(User.role == role.value)
+        return list(self.db.scalars(statement))
+
     def update_role(self, user: User, role: UserRole) -> User:
         user.role = role.value
         self.db.commit()

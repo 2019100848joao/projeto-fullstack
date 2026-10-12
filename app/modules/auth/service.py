@@ -53,6 +53,9 @@ class AuthService:
 
         return Token(access_token=create_access_token(subject=user.id))
 
+    def list_users(self, *, role: UserRole | None = None) -> list[User]:
+        return self.repository.list(role=role)
+
     def update_user_role(
         self,
         *,

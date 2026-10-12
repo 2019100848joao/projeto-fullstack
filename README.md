@@ -64,6 +64,7 @@ python -c "from app.core.migrations import run_migrations; run_migrations()"
 - `POST /auth/register` creates a user account.
 - `POST /auth/login` returns a JWT access token from an `email` and `password` JSON body.
 - `GET /auth/me` returns the authenticated user.
+- `GET /auth/users?role=patient|doctor|attendant|admin` lists users for `admin`, `doctor` and `attendant`.
 - `PATCH /auth/users/{user_id}/role` changes a user role when the authenticated user has permission.
 - `POST /appointments`, `GET /appointments`, `PATCH /appointments/{id}` and `POST /appointments/{id}/cancel` let an attendant schedule, list, reschedule and cancel appointments.
 - `GET /appointments/agenda?view=day|week|month&date=YYYY-MM-DD` returns the authenticated doctor agenda.

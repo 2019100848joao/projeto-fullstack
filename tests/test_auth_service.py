@@ -27,6 +27,10 @@ class FakeUserRepository:
     def get_by_id(self, user_id: str) -> User | None:
         return self.user
 
+    def list(self, *, role: UserRole | None = None) -> list[User]:
+        self.listed_role = role
+        return [] if self.user is None else [self.user]
+
     def update_role(self, user: User, role: UserRole) -> User:
         user.role = role.value
         return user
@@ -117,6 +121,15 @@ def test_login_raises_domain_error_when_user_is_inactive() -> None:
 
     with pytest.raises(InactiveUserError):
         service.login(email="doctor@example.com", password="password123")
+
+
+def test_list_users_filters_by_role() -> None:
+    repository = FakeUserRepository(make_user(UserRole.DOCTOR))
+
+    users = AuthService(repository).list_users(role=UserRole.DOCTOR)
+
+    assert repository.listed_role == UserRole.DOCTOR
+    assert [user.role for user in users] == ["doctor"]
 
 
 def test_admin_can_change_any_user_role() -> None:

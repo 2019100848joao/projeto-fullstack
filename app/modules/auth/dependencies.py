@@ -84,3 +84,7 @@ AdminUserDep = Annotated[User, Depends(require_roles(UserRole.ADMIN))]
 PatientUserDep = Annotated[User, Depends(require_roles(UserRole.PATIENT))]
 DoctorUserDep = Annotated[User, Depends(require_roles(UserRole.DOCTOR))]
 AttendantUserDep = Annotated[User, Depends(require_roles(UserRole.ATTENDANT))]
+StaffUserDep = Annotated[
+    User,
+    Depends(require_roles(UserRole.ADMIN, UserRole.DOCTOR, UserRole.ATTENDANT)),
+]

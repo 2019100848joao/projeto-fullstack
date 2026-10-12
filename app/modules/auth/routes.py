@@ -2,7 +2,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.modules.auth.dependencies import CurrentUserDep, get_auth_service
+from app.modules.auth.dependencies import (
+    CurrentUserDep,
+    StaffUserDep,
+    get_auth_service,
+)
+from app.modules.auth.enums import UserRole
 from app.modules.auth.exceptions import (
     EmailAlreadyRegisteredError,
     InactiveUserError,
@@ -59,6 +64,15 @@ def login(user_login: UserLogin, auth_service: AuthServiceDep) -> Token:
 @router.get("/me", response_model=UserRead)
 def read_current_user(current_user: CurrentUserDep) -> User:
     return current_user
+
+
+@router.get("/users", response_model=list[UserRead])
+def list_users(
+    current_user: StaffUserDep,
+    auth_service: AuthServiceDep,
+    role: UserRole | None = None,
+) -> list[User]:
+    return auth_service.list_users(role=role)
 
 
 @router.patch("/users/{user_id}/role", response_model=UserRead)
