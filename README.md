@@ -68,7 +68,9 @@ python -c "from app.core.migrations import run_migrations; run_migrations()"
 - `PATCH /auth/users/{user_id}/role` changes a user role when the authenticated user has permission.
 - `POST /appointments`, `GET /appointments`, `PATCH /appointments/{id}` and `POST /appointments/{id}/cancel` let an attendant schedule, list, reschedule and cancel appointments.
 - `GET /appointments/agenda?view=day|week|month&date=YYYY-MM-DD` returns the authenticated doctor agenda.
-- `admin` users can call every appointment endpoint; on the agenda they must pass `doctor_id`.
+- `GET /exams` and `GET /exams/{id}` return the exams visible to the authenticated user.
+- `admin` users can call every appointment and exam endpoint; on the agenda they must pass `doctor_id`.
+- `POST /exams/{id}/schedule`, `POST /exams/{id}/perform` and `POST /exams/{id}/result` let an attendant move an exam through its statuses.
 
 ## Auth Roles
 

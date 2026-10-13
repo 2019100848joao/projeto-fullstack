@@ -16,6 +16,7 @@ APPOINTMENT_BODY = {
     "doctor_id": "doctor",
     "scheduled_at": "2026-10-14T10:00:00-03:00",
 }
+EXAM_SCHEDULE_BODY = {"scheduled_at": "2026-10-16T08:00:00-03:00"}
 
 
 def request_as(
@@ -55,6 +56,9 @@ def request_as(
         (UserRole.DOCTOR, "POST", "/appointments/id/cancel", None),
         (UserRole.ATTENDANT, "GET", "/appointments/agenda", None),
         (UserRole.PATIENT, "GET", "/appointments/agenda", None),
+        (UserRole.DOCTOR, "POST", "/exams/id/schedule", EXAM_SCHEDULE_BODY),
+        (UserRole.PATIENT, "POST", "/exams/id/perform", None),
+        (UserRole.DOCTOR, "POST", "/exams/id/result", {"result": "Normal"}),
     ],
 )
 def test_role_without_permission_is_forbidden(
@@ -70,6 +74,7 @@ def test_role_without_permission_is_forbidden(
     ("method", "path"),
     [
         ("GET", "/appointments/agenda"),
+        ("GET", "/exams"),
     ],
 )
 def test_clinic_routes_require_authentication(method: str, path: str) -> None:
