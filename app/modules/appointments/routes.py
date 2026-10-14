@@ -11,6 +11,7 @@ from app.modules.appointments.dependencies import (
 from app.modules.appointments.enums import AgendaView
 from app.modules.appointments.exceptions import (
     AgendaDoctorRequiredError,
+    AppointmentAccessDeniedError,
     AppointmentNotFoundError,
     AppointmentNotScheduledError,
     DoctorUnavailableError,
@@ -21,8 +22,10 @@ from app.modules.appointments.models import Appointment
 from app.modules.appointments.schemas import (
     AgendaRead,
     AppointmentCreate,
+    AppointmentDetailRead,
     AppointmentRead,
     AppointmentReschedule,
+    AttendanceCreate,
 )
 from app.modules.appointments.service import AppointmentService
 
@@ -44,6 +47,10 @@ NOT_SCHEDULED = HTTPException(
 DOCTOR_UNAVAILABLE = HTTPException(
     status_code=status.HTTP_409_CONFLICT,
     detail="Doctor already has an appointment at this time",
+)
+ACCESS_DENIED = HTTPException(
+    status_code=status.HTTP_403_FORBIDDEN,
+    detail="You do not have permission to access this appointment",
 )
 
 
@@ -123,6 +130,27 @@ def read_agenda(
         ) from exc
 
 
+@router.get(
+    "/{appointment_id}",
+    response_model=AppointmentDetailRead,
+    summary="Appointment details with attendance record (doctor, admin)",
+)
+def read_appointment(
+    appointment_id: str,
+    current_user: DoctorOrAdminUserDep,
+    service: AppointmentServiceDep,
+) -> Appointment:
+    try:
+        return service.get_details(
+            current_user=current_user,
+            appointment_id=appointment_id,
+        )
+    except AppointmentNotFoundError as exc:
+        raise NOT_FOUND from exc
+    except AppointmentAccessDeniedError as exc:
+        raise ACCESS_DENIED from exc
+
+
 @router.patch(
     "/{appointment_id}",
     response_model=AppointmentRead,
@@ -161,5 +189,31 @@ def cancel_appointment(
         return service.cancel(appointment_id=appointment_id)
     except AppointmentNotFoundError as exc:
         raise NOT_FOUND from exc
+    except AppointmentNotScheduledError as exc:
+        raise NOT_SCHEDULED from exc
+
+
+@router.post(
+    "/{appointment_id}/attendance",
+    response_model=AppointmentDetailRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register the attendance and request exams (doctor, admin)",
+)
+def register_attendance(
+    appointment_id: str,
+    attendance: AttendanceCreate,
+    current_user: DoctorOrAdminUserDep,
+    service: AppointmentServiceDep,
+) -> Appointment:
+    try:
+        return service.register_attendance(
+            current_user=current_user,
+            appointment_id=appointment_id,
+            attendance=attendance,
+        )
+    except AppointmentNotFoundError as exc:
+        raise NOT_FOUND from exc
+    except AppointmentAccessDeniedError as exc:
+        raise ACCESS_DENIED from exc
     except AppointmentNotScheduledError as exc:
         raise NOT_SCHEDULED from exc

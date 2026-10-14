@@ -5,6 +5,7 @@ from app.core.config import settings
 from app.modules.appointments.enums import AgendaView, AppointmentStatus
 from app.modules.appointments.exceptions import (
     AgendaDoctorRequiredError,
+    AppointmentAccessDeniedError,
     AppointmentNotFoundError,
     AppointmentNotScheduledError,
     DoctorUnavailableError,
@@ -16,6 +17,7 @@ from app.modules.appointments.repository import AppointmentRepository
 from app.modules.appointments.schemas import (
     AgendaRead,
     AppointmentCreate,
+    AttendanceCreate,
 )
 from app.modules.auth.enums import UserRole
 from app.modules.auth.models import User
@@ -125,6 +127,40 @@ class AppointmentService:
         return AgendaRead.model_validate(
             {"view": view, "start": start, "end": end, "appointments": appointments},
             from_attributes=True,
+        )
+
+    def get_details(self, *, current_user: User, appointment_id: str) -> Appointment:
+        appointment = self.repository.get_by_id(appointment_id)
+        if appointment is None:
+            raise AppointmentNotFoundError
+
+        if (
+            current_user.role != UserRole.ADMIN.value
+            and appointment.doctor_id != current_user.id
+        ):
+            raise AppointmentAccessDeniedError
+
+        return appointment
+
+    def register_attendance(
+        self,
+        *,
+        current_user: User,
+        appointment_id: str,
+        attendance: AttendanceCreate,
+    ) -> Appointment:
+        appointment = self.get_details(
+            current_user=current_user,
+            appointment_id=appointment_id,
+        )
+        if appointment.status != AppointmentStatus.SCHEDULED.value:
+            raise AppointmentNotScheduledError
+
+        return self.repository.register_attendance(
+            appointment,
+            observations=attendance.observations,
+            consultation_info=attendance.consultation_info,
+            exam_names=attendance.exam_requests,
         )
 
     def _get_scheduled(self, appointment_id: str) -> Appointment:

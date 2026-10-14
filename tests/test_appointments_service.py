@@ -5,6 +5,7 @@ import pytest
 from app.modules.appointments.enums import AgendaView, AppointmentStatus
 from app.modules.appointments.exceptions import (
     AgendaDoctorRequiredError,
+    AppointmentAccessDeniedError,
     AppointmentNotFoundError,
     AppointmentNotScheduledError,
     DoctorUnavailableError,
@@ -12,7 +13,7 @@ from app.modules.appointments.exceptions import (
     InvalidPatientError,
 )
 from app.modules.appointments.models import Appointment
-from app.modules.appointments.schemas import AppointmentCreate
+from app.modules.appointments.schemas import AppointmentCreate, AttendanceCreate
 from app.modules.appointments.service import AppointmentService, agenda_period
 from app.modules.auth.enums import UserRole
 from app.modules.auth.models import User
@@ -64,6 +65,7 @@ class FakeAppointmentRepository:
         self.conflict = conflict
         self.period: tuple[datetime, datetime] | None = None
         self.agenda_doctor_id: str | None = None
+        self.exam_names: list[str] | None = None
 
     def get_by_id(self, appointment_id: str) -> Appointment | None:
         return self.appointment
@@ -110,6 +112,20 @@ class FakeAppointmentRepository:
         self.period = (start, end)
         self.agenda_doctor_id = doctor_id
         return []
+
+    def register_attendance(
+        self,
+        appointment: Appointment,
+        *,
+        observations: str | None,
+        consultation_info: str | None,
+        exam_names: list[str],
+    ) -> Appointment:
+        self.exam_names = exam_names
+        appointment.observations = observations
+        appointment.consultation_info = consultation_info
+        appointment.status = AppointmentStatus.COMPLETED.value
+        return appointment
 
 
 def make_service(
@@ -198,6 +214,47 @@ def test_cancel_rejects_appointment_that_is_not_scheduled() -> None:
         service.cancel(appointment_id="appointment")
 
 
+def test_register_attendance_completes_appointment_and_requests_exams() -> None:
+    repository = FakeAppointmentRepository(make_appointment())
+
+    appointment = make_service(repository).register_attendance(
+        current_user=make_user("doctor", UserRole.DOCTOR),
+        appointment_id="appointment",
+        attendance=AttendanceCreate(
+            observations="Headache",
+            exam_requests=[" Blood count "],
+        ),
+    )
+
+    assert appointment.status == "completed"
+    assert appointment.observations == "Headache"
+    assert repository.exam_names == ["Blood count"]
+
+
+def test_register_attendance_rejects_other_doctor() -> None:
+    service = make_service(FakeAppointmentRepository(make_appointment()))
+
+    with pytest.raises(AppointmentAccessDeniedError):
+        service.register_attendance(
+            current_user=make_user("other-doctor", UserRole.DOCTOR),
+            appointment_id="appointment",
+            attendance=AttendanceCreate(),
+        )
+
+
+def test_register_attendance_rejects_cancelled_appointment() -> None:
+    service = make_service(
+        FakeAppointmentRepository(make_appointment(AppointmentStatus.CANCELLED))
+    )
+
+    with pytest.raises(AppointmentNotScheduledError):
+        service.register_attendance(
+            current_user=make_user("doctor", UserRole.DOCTOR),
+            appointment_id="appointment",
+            attendance=AttendanceCreate(),
+        )
+
+
 @pytest.mark.parametrize(
     ("view", "expected_start", "expected_end"),
     [
@@ -259,3 +316,15 @@ def test_admin_agenda_requires_doctor_id() -> None:
             current_user=make_user("admin", UserRole.ADMIN),
             view=AgendaView.DAY,
         )
+
+
+def test_admin_can_register_attendance_for_any_appointment() -> None:
+    service = make_service(FakeAppointmentRepository(make_appointment()))
+
+    appointment = service.register_attendance(
+        current_user=make_user("admin", UserRole.ADMIN),
+        appointment_id="appointment",
+        attendance=AttendanceCreate(),
+    )
+
+    assert appointment.status == "completed"

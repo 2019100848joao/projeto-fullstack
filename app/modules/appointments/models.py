@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 from app.modules.appointments.enums import AppointmentStatus
 from app.modules.auth.models import User
+from app.modules.exams.models import Exam
 
 
 class Appointment(Base):
@@ -35,3 +36,4 @@ class Appointment(Base):
 
     patient: Mapped[User] = relationship(foreign_keys=[patient_id])
     doctor: Mapped[User] = relationship(foreign_keys=[doctor_id])
+    exams: Mapped[list[Exam]] = relationship(order_by=Exam.created_at)

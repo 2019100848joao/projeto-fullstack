@@ -1,10 +1,11 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.appointments.enums import AppointmentStatus
 from app.modules.appointments.models import Appointment
+from app.modules.exams.models import Exam
 
 
 class AppointmentRepository:
@@ -93,6 +94,31 @@ class AppointmentRepository:
 
     def cancel(self, appointment: Appointment) -> Appointment:
         appointment.status = AppointmentStatus.CANCELLED.value
+        self.db.commit()
+        self.db.refresh(appointment)
+        return appointment
+
+    def register_attendance(
+        self,
+        appointment: Appointment,
+        *,
+        observations: str | None,
+        consultation_info: str | None,
+        exam_names: list[str],
+    ) -> Appointment:
+        appointment.observations = observations
+        appointment.consultation_info = consultation_info
+        appointment.attended_at = datetime.now(UTC)
+        appointment.status = AppointmentStatus.COMPLETED.value
+        for name in exam_names:
+            self.db.add(
+                Exam(
+                    appointment_id=appointment.id,
+                    patient_id=appointment.patient_id,
+                    doctor_id=appointment.doctor_id,
+                    name=name,
+                )
+            )
         self.db.commit()
         self.db.refresh(appointment)
         return appointment

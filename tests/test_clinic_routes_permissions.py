@@ -56,6 +56,8 @@ def request_as(
         (UserRole.DOCTOR, "POST", "/appointments/id/cancel", None),
         (UserRole.ATTENDANT, "GET", "/appointments/agenda", None),
         (UserRole.PATIENT, "GET", "/appointments/agenda", None),
+        (UserRole.ATTENDANT, "POST", "/appointments/id/attendance", {}),
+        (UserRole.PATIENT, "GET", "/appointments/id", None),
         (UserRole.DOCTOR, "POST", "/exams/id/schedule", EXAM_SCHEDULE_BODY),
         (UserRole.PATIENT, "POST", "/exams/id/perform", None),
         (UserRole.DOCTOR, "POST", "/exams/id/result", {"result": "Normal"}),

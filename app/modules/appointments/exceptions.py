@@ -22,5 +22,9 @@ class AppointmentNotScheduledError(AppointmentError):
     pass
 
 
+class AppointmentAccessDeniedError(AppointmentError):
+    pass
+
+
 class AgendaDoctorRequiredError(AppointmentError):
     pass
