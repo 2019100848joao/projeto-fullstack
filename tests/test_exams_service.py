@@ -129,6 +129,20 @@ def test_patient_only_lists_own_exams() -> None:
     assert repository.list_filters == {"patient_id": "patient", "status": None}
 
 
+def test_doctor_only_lists_exams_of_attended_patients() -> None:
+    repository = FakeExamRepository()
+
+    ExamService(repository).list_results(
+        current_user=make_user("doctor", UserRole.DOCTOR),
+    )
+
+    assert repository.list_filters == {
+        "patient_id": None,
+        "status": ExamStatus.RESULT_AVAILABLE,
+        "attended_by_doctor_id": "doctor",
+    }
+
+
 def test_admin_lists_exams_of_any_patient() -> None:
     repository = FakeExamRepository()
 

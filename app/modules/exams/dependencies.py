@@ -24,6 +24,10 @@ ExamViewerDep = Annotated[
         )
     ),
 ]
+ResultViewerDep = Annotated[
+    User,
+    Depends(require_roles(UserRole.DOCTOR, UserRole.PATIENT, UserRole.ADMIN)),
+]
 ExamOperatorDep = Annotated[
     User,
     Depends(require_roles(UserRole.ATTENDANT, UserRole.ADMIN)),

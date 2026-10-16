@@ -58,6 +58,7 @@ def request_as(
         (UserRole.PATIENT, "GET", "/appointments/agenda", None),
         (UserRole.ATTENDANT, "POST", "/appointments/id/attendance", {}),
         (UserRole.PATIENT, "GET", "/appointments/id", None),
+        (UserRole.ATTENDANT, "GET", "/exams/results", None),
         (UserRole.DOCTOR, "POST", "/exams/id/schedule", EXAM_SCHEDULE_BODY),
         (UserRole.PATIENT, "POST", "/exams/id/perform", None),
         (UserRole.DOCTOR, "POST", "/exams/id/result", {"result": "Normal"}),
@@ -77,6 +78,7 @@ def test_role_without_permission_is_forbidden(
     [
         ("GET", "/appointments/agenda"),
         ("GET", "/exams"),
+        ("GET", "/exams/results"),
     ],
 )
 def test_clinic_routes_require_authentication(method: str, path: str) -> None:

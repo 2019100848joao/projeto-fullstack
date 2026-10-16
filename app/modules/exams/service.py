@@ -39,6 +39,18 @@ class ExamService:
             attended_by_doctor_id=current_user.id,
         )
 
+    def list_results(
+        self,
+        *,
+        current_user: User,
+        patient_id: str | None = None,
+    ) -> list[Exam]:
+        return self.list_exams(
+            current_user=current_user,
+            status=ExamStatus.RESULT_AVAILABLE,
+            patient_id=patient_id,
+        )
+
     def get_exam(self, *, current_user: User, exam_id: str) -> Exam:
         exam = self._get(exam_id)
         role = UserRole(current_user.role)

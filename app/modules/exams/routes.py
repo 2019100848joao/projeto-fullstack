@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.modules.exams.dependencies import (
     ExamOperatorDep,
     ExamViewerDep,
+    ResultViewerDep,
     get_exam_service,
 )
 from app.modules.exams.enums import ExamStatus
@@ -51,6 +52,19 @@ def list_exams(
         status=exam_status,
         patient_id=patient_id,
     )
+
+
+@router.get(
+    "/results",
+    response_model=list[ExamRead],
+    summary="List available exam results (patient, doctor, admin)",
+)
+def list_results(
+    current_user: ResultViewerDep,
+    service: ExamServiceDep,
+    patient_id: str | None = None,
+) -> list[Exam]:
+    return service.list_results(current_user=current_user, patient_id=patient_id)
 
 
 @router.get(

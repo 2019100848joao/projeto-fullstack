@@ -71,6 +71,7 @@ python -c "from app.core.migrations import run_migrations; run_migrations()"
 - `POST /appointments/{id}/attendance` lets the appointment doctor register the attendance and request exams.
 - `GET /appointments/{id}` returns the appointment with its attendance record to its doctor.
 - `GET /exams` and `GET /exams/{id}` return the exams visible to the authenticated user.
+- `GET /exams/results` returns available exam results to patients and doctors.
 - `admin` users can call every appointment and exam endpoint; on the agenda they must pass `doctor_id`.
 - `POST /exams/{id}/schedule`, `POST /exams/{id}/perform` and `POST /exams/{id}/result` let an attendant move an exam through its statuses.
 
