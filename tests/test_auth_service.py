@@ -11,7 +11,7 @@ from app.modules.auth.exceptions import (
     RoleChangeNotAllowedError,
     UserNotFoundError,
 )
-from app.modules.auth.models import User
+from app.modules.auth.models import DocumentType, User, UserDocument
 from app.modules.auth.schemas import RegistrationRole, UserCreate
 from app.modules.auth.service import AuthService
 
@@ -38,12 +38,14 @@ class FakeUserRepository:
         full_name: str,
         hashed_password: str,
         role: UserRole = UserRole.PATIENT,
+        document: UserDocument | None = None,
     ) -> User:
         self.created_role = role
         return User(
             id="01K4SRY37DGE7K5YWWKNB0RESW",
             email=email,
             full_name=full_name,
+            document=document,
             hashed_password=hashed_password,
             role=role.value,
             is_active=True,
@@ -58,6 +60,7 @@ def test_register_raises_domain_error_when_email_exists() -> None:
                 id="01K4SRY37DGE7K5YWWKNB0RESW",
                 email="doctor@example.com",
                 full_name="Dr. Example",
+                document=None,
                 hashed_password="hashed",
                 role="doctor",
                 is_active=True,
@@ -91,6 +94,7 @@ def test_register_accepts_non_admin_role() -> None:
 
     assert repository.created_role == UserRole.DOCTOR
     assert user.role == "doctor"
+    assert user.document is None
 
 
 def test_login_raises_domain_error_when_credentials_are_invalid() -> None:
@@ -107,6 +111,7 @@ def test_login_raises_domain_error_when_user_is_inactive() -> None:
                 id="01K4SRY37DGE7K5YWWKNB0RESW",
                 email="doctor@example.com",
                 full_name="Dr. Example",
+                document=None,
                 hashed_password=hash_password("password123"),
                 role="doctor",
                 is_active=False,
@@ -177,11 +182,34 @@ def test_role_change_raises_when_user_does_not_exist() -> None:
         )
 
 
-def make_user(role: UserRole) -> User:
+def test_user_can_hold_single_document() -> None:
+    doc_type = DocumentType(
+        id="01K4SRY37DGE7K5YWWKNB0TYPE",
+        type="CPF",
+    )
+    user_doc = UserDocument(
+        id="01K4SRY37DGE7K5YWWKNB0DOC1",
+        user_id="01K4SRY37DGE7K5YWWKNB0RESW",
+        value="123.456.789-00",
+        document_type=doc_type.id,
+    )
+    user = make_user(UserRole.PATIENT, document=user_doc)
+
+    assert user.document is not None
+    assert user.document.id == "01K4SRY37DGE7K5YWWKNB0DOC1"
+    assert user.document.value == "123.456.789-00"
+    assert user.document.document_type == doc_type.id
+
+
+def make_user(
+    role: UserRole,
+    document: UserDocument | None = None,
+) -> User:
     return User(
         id="01K4SRY37DGE7K5YWWKNB0RESW",
         email="doctor@example.com",
         full_name="Dr. Example",
+        document=document,
         hashed_password=hash_password("password123"),
         role=role.value,
         is_active=True,
