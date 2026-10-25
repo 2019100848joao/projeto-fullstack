@@ -45,7 +45,7 @@ class UserDocument(Base):
         unique=True,
     )
     value: Mapped[str] = mapped_column(String(255))
-    document_type: Mapped[str] = mapped_column(
+    type_id: Mapped[str] = mapped_column(
         String(26),
         ForeignKey("document_type.id", ondelete="CASCADE"),
         index=True,
