@@ -4,16 +4,22 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.modules.auth.dependencies import CurrentUserDep, get_auth_service
 from app.modules.auth.exceptions import (
+    DocumentAlreadyExistsError,
+    DocumentTypeNotFoundError,
     EmailAlreadyRegisteredError,
     InactiveUserError,
     InvalidCredentialsError,
     RoleChangeNotAllowedError,
     UserNotFoundError,
 )
-from app.modules.auth.models import User
+from app.modules.auth.models import DocumentType, User, UserDocument
 from app.modules.auth.schemas import (
+    DocumentTypeCreate,
+    DocumentTypeRead,
     Token,
     UserCreate,
+    UserDocumentCreate,
+    UserDocumentRead,
     UserLogin,
     UserRead,
     UserRoleUpdate,
@@ -37,6 +43,11 @@ def register(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email is already registered",
         ) from exc
+    except DocumentTypeNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document type not found",
+        ) from exc
 
 
 @router.post("/login", response_model=Token)
@@ -59,6 +70,45 @@ def login(user_login: UserLogin, auth_service: AuthServiceDep) -> Token:
 @router.get("/me", response_model=UserRead)
 def read_current_user(current_user: CurrentUserDep) -> User:
     return current_user
+
+
+@router.post(
+    "/document-types",
+    response_model=DocumentTypeRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_document_type(
+    doc_type_create: DocumentTypeCreate,
+    auth_service: AuthServiceDep,
+) -> DocumentType:
+    return auth_service.create_document_type(doc_type_create)
+
+
+@router.post(
+    "/me/document",
+    response_model=UserDocumentRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_current_user_document(
+    doc_create: UserDocumentCreate,
+    current_user: CurrentUserDep,
+    auth_service: AuthServiceDep,
+) -> UserDocument:
+    try:
+        return auth_service.create_user_document(
+            current_user=current_user,
+            doc_create=doc_create,
+        )
+    except DocumentTypeNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document type not found",
+        ) from exc
+    except DocumentAlreadyExistsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User already has a document",
+        ) from exc
 
 
 @router.patch("/users/{user_id}/role", response_model=UserRead)

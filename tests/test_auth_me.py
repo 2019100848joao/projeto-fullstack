@@ -19,7 +19,7 @@ def override_current_user() -> User:
             id="01K4SRY37DGE7K5YWWKNB0DOC1",
             user_id="01K4SRY37DGE7K5YWWKNB0RESW",
             value="CRM-123456",
-            document_type="01K4SRY37DGE7K5YWWKNB0TYPE",
+            type_id="01K4SRY37DGE7K5YWWKNB0TYPE",
         ),
         hashed_password="not-returned",
         role="doctor",
@@ -43,6 +43,12 @@ def test_me_returns_current_user() -> None:
         "email": "doctor@example.com",
         "full_name": "Dr. Example",
         "role": "doctor",
+        "document": {
+            "id": "01K4SRY37DGE7K5YWWKNB0DOC1",
+            "user_id": "01K4SRY37DGE7K5YWWKNB0RESW",
+            "type_id": "01K4SRY37DGE7K5YWWKNB0TYPE",
+            "value": "CRM-123456",
+        },
         "is_active": True,
         "created_at": "2026-09-09T00:00:00Z",
     }
