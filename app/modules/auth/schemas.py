@@ -12,17 +12,6 @@ class RegistrationRole(StrEnum):
     ATTENDANT = "attendant"
 
 
-class DocumentTypeCreate(BaseModel):
-    type: str = Field(min_length=1, max_length=255)
-
-
-class DocumentTypeRead(BaseModel):
-    id: str
-    type: str
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 class UserDocumentCreate(BaseModel):
     type_id: str = Field(min_length=26, max_length=26)
     value: str = Field(min_length=1, max_length=255)

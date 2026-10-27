@@ -13,12 +13,28 @@ from app.modules.auth.exceptions import (
     DocumentAlreadyExistsError,
     DocumentTypeNotFoundError,
 )
-from app.modules.auth.models import DocumentType, User, UserDocument
-from app.modules.auth.schemas import (
-    DocumentTypeCreate,
-    UserCreate,
-    UserDocumentCreate,
-)
+from app.modules.auth.models import User, UserDocument
+from app.modules.auth.schemas import UserCreate, UserDocumentCreate
+from app.modules.document_types.dependencies import get_document_type_service
+from app.modules.document_types.models import DocumentType
+from app.modules.document_types.schemas import DocumentTypeCreate
+from app.modules.document_types.service import DocumentTypeService
+
+
+class FakeDocumentTypeRepository:
+    def create(self, *, doc_type: str) -> DocumentType:
+        return DocumentType(
+            id="01K4SRY37DGE7K5YWWKNB0TYPE",
+            type=doc_type,
+        )
+
+
+class FakeDocumentTypeService:
+    def create(self, doc_type_create: DocumentTypeCreate) -> DocumentType:
+        return DocumentType(
+            id="01K4SRY37DGE7K5YWWKNB0TYPE",
+            type=doc_type_create.type,
+        )
 
 
 class FakeDocumentAuthService:
@@ -54,15 +70,6 @@ class FakeDocumentAuthService:
             role=user_create.role.value,
             is_active=True,
             created_at=datetime(2026, 9, 9, tzinfo=UTC),
-        )
-
-    def create_document_type(
-        self,
-        doc_type_create: DocumentTypeCreate,
-    ) -> DocumentType:
-        return DocumentType(
-            id="01K4SRY37DGE7K5YWWKNB0TYPE",
-            type=doc_type_create.type,
         )
 
     def create_user_document(
@@ -103,6 +110,15 @@ def test_document_type_model_creation() -> None:
 
     assert doc_type.id == "01K4SRY37DGE7K5YWWKNB0TYPE"
     assert doc_type.type == "CPF"
+
+
+def test_document_type_service_creates_document_type() -> None:
+    service = DocumentTypeService(FakeDocumentTypeRepository())  # type: ignore[arg-type]
+
+    doc_type = service.create(DocumentTypeCreate(type="CRM"))
+
+    assert doc_type.id == "01K4SRY37DGE7K5YWWKNB0TYPE"
+    assert doc_type.type == "CRM"
 
 
 def test_user_document_model_creation() -> None:
@@ -170,12 +186,12 @@ def test_user_documents_table_schema_constraints() -> None:
 
 
 def test_create_document_type_endpoint() -> None:
-    app.dependency_overrides[get_auth_service] = FakeDocumentAuthService
+    app.dependency_overrides[get_document_type_service] = FakeDocumentTypeService
 
     try:
         client = TestClient(app)
         response = client.post(
-            "/auth/document-types",
+            "/document-types",
             json={"type": "CPF"},
         )
     finally:

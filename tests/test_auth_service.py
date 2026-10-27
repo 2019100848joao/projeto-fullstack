@@ -13,14 +13,14 @@ from app.modules.auth.exceptions import (
     RoleChangeNotAllowedError,
     UserNotFoundError,
 )
-from app.modules.auth.models import DocumentType, User, UserDocument
+from app.modules.auth.models import User, UserDocument
 from app.modules.auth.schemas import (
-    DocumentTypeCreate,
     RegistrationRole,
     UserCreate,
     UserDocumentCreate,
 )
 from app.modules.auth.service import AuthService
+from app.modules.document_types.models import DocumentType
 
 
 class FakeUserRepository:
@@ -73,14 +73,6 @@ class FakeUserRepository:
         if self.doc_type is not None and self.doc_type.id == type_id:
             return self.doc_type
         return None
-
-    def create_document_type(self, *, doc_type: str) -> DocumentType:
-        created = DocumentType(
-            id="01K4SRY37DGE7K5YWWKNB0TYPE",
-            type=doc_type,
-        )
-        self.doc_type = created
-        return created
 
     def get_document_by_user_id(self, user_id: str) -> UserDocument | None:
         return self.user_document
@@ -183,15 +175,6 @@ def test_register_with_unknown_document_type_raises_error() -> None:
                 ),
             )
         )
-
-
-def test_create_document_type_saves_new_type() -> None:
-    service = AuthService(FakeUserRepository())
-
-    doc_type = service.create_document_type(DocumentTypeCreate(type="CRM"))
-
-    assert doc_type.id == "01K4SRY37DGE7K5YWWKNB0TYPE"
-    assert doc_type.type == "CRM"
 
 
 def test_create_user_document_links_to_current_user() -> None:

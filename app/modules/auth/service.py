@@ -9,10 +9,9 @@ from app.modules.auth.exceptions import (
     RoleChangeNotAllowedError,
     UserNotFoundError,
 )
-from app.modules.auth.models import DocumentType, User, UserDocument
+from app.modules.auth.models import User, UserDocument
 from app.modules.auth.repository import UserRepository
 from app.modules.auth.schemas import (
-    DocumentTypeCreate,
     Token,
     UserCreate,
     UserDocumentCreate,
@@ -63,12 +62,6 @@ class AuthService:
             role=UserRole(user_create.role),
             document=document,
         )
-
-    def create_document_type(
-        self,
-        doc_type_create: DocumentTypeCreate,
-    ) -> DocumentType:
-        return self.repository.create_document_type(doc_type=doc_type_create.type)
 
     def create_user_document(
         self,

@@ -2,7 +2,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.auth.enums import UserRole
-from app.modules.auth.models import DocumentType, User, UserDocument
+from app.modules.auth.models import User, UserDocument
+from app.modules.document_types.models import DocumentType
 
 
 class UserRepository:
@@ -45,13 +46,6 @@ class UserRepository:
 
     def get_document_type_by_id(self, type_id: str) -> DocumentType | None:
         return self.db.get(DocumentType, type_id)
-
-    def create_document_type(self, *, doc_type: str) -> DocumentType:
-        document_type = DocumentType(type=doc_type)
-        self.db.add(document_type)
-        self.db.commit()
-        self.db.refresh(document_type)
-        return document_type
 
     def get_document_by_user_id(self, user_id: str) -> UserDocument | None:
         statement = select(UserDocument).where(UserDocument.user_id == user_id)

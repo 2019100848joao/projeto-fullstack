@@ -12,10 +12,8 @@ from app.modules.auth.exceptions import (
     RoleChangeNotAllowedError,
     UserNotFoundError,
 )
-from app.modules.auth.models import DocumentType, User, UserDocument
+from app.modules.auth.models import User, UserDocument
 from app.modules.auth.schemas import (
-    DocumentTypeCreate,
-    DocumentTypeRead,
     Token,
     UserCreate,
     UserDocumentCreate,
@@ -70,18 +68,6 @@ def login(user_login: UserLogin, auth_service: AuthServiceDep) -> Token:
 @router.get("/me", response_model=UserRead)
 def read_current_user(current_user: CurrentUserDep) -> User:
     return current_user
-
-
-@router.post(
-    "/document-types",
-    response_model=DocumentTypeRead,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_document_type(
-    doc_type_create: DocumentTypeCreate,
-    auth_service: AuthServiceDep,
-) -> DocumentType:
-    return auth_service.create_document_type(doc_type_create)
 
 
 @router.post(
