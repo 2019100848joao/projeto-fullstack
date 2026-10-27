@@ -7,7 +7,7 @@ os.environ["RUN_MIGRATIONS_ON_STARTUP"] = "false"
 
 from app.main import app
 from app.modules.auth.dependencies import get_current_user
-from app.modules.auth.models import User
+from app.modules.auth.models import User, UserDocument
 
 
 def override_current_user() -> User:
@@ -15,6 +15,12 @@ def override_current_user() -> User:
         id="01K4SRY37DGE7K5YWWKNB0RESW",
         email="doctor@example.com",
         full_name="Dr. Example",
+        document=UserDocument(
+            id="01K4SRY37DGE7K5YWWKNB0DOC1",
+            user_id="01K4SRY37DGE7K5YWWKNB0RESW",
+            value="CRM-123456",
+            type_id="01K4SRY37DGE7K5YWWKNB0TYPE",
+        ),
         hashed_password="not-returned",
         role="doctor",
         is_active=True,
@@ -37,6 +43,12 @@ def test_me_returns_current_user() -> None:
         "email": "doctor@example.com",
         "full_name": "Dr. Example",
         "role": "doctor",
+        "document": {
+            "id": "01K4SRY37DGE7K5YWWKNB0DOC1",
+            "user_id": "01K4SRY37DGE7K5YWWKNB0RESW",
+            "type_id": "01K4SRY37DGE7K5YWWKNB0TYPE",
+            "value": "CRM-123456",
+        },
         "is_active": True,
         "created_at": "2026-09-09T00:00:00Z",
     }

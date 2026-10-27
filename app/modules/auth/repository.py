@@ -2,7 +2,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.auth.enums import UserRole
-from app.modules.auth.models import User
+from app.modules.auth.models import User, UserDocument
+from app.modules.document_types.models import DocumentType
 
 
 class UserRepository:
@@ -29,14 +30,40 @@ class UserRepository:
         full_name: str,
         hashed_password: str,
         role: UserRole = UserRole.PATIENT,
+        document: UserDocument | None = None,
     ) -> User:
         user = User(
             email=email,
             full_name=full_name,
             hashed_password=hashed_password,
             role=role.value,
+            document=document,
         )
         self.db.add(user)
         self.db.commit()
         self.db.refresh(user)
         return user
+
+    def get_document_type_by_id(self, type_id: str) -> DocumentType | None:
+        return self.db.get(DocumentType, type_id)
+
+    def get_document_by_user_id(self, user_id: str) -> UserDocument | None:
+        statement = select(UserDocument).where(UserDocument.user_id == user_id)
+        return self.db.scalar(statement)
+
+    def create_user_document(
+        self,
+        *,
+        user_id: str,
+        type_id: str,
+        value: str,
+    ) -> UserDocument:
+        document = UserDocument(
+            user_id=user_id,
+            type_id=type_id,
+            value=value,
+        )
+        self.db.add(document)
+        self.db.commit()
+        self.db.refresh(document)
+        return document
