@@ -20,11 +20,3 @@ class UserNotFoundError(AuthError):
 
 class RoleChangeNotAllowedError(AuthError):
     pass
-
-
-class DocumentTypeNotFoundError(AuthError):
-    pass
-
-
-class DocumentAlreadyExistsError(AuthError):
-    pass

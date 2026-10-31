@@ -1,21 +1,15 @@
 from app.core.security import create_access_token, hash_password, verify_password
 from app.modules.auth.enums import UserRole
 from app.modules.auth.exceptions import (
-    DocumentAlreadyExistsError,
-    DocumentTypeNotFoundError,
     EmailAlreadyRegisteredError,
     InactiveUserError,
     InvalidCredentialsError,
     RoleChangeNotAllowedError,
     UserNotFoundError,
 )
-from app.modules.auth.models import User, UserDocument
-from app.modules.auth.repository import UserRepository
-from app.modules.auth.schemas import (
-    Token,
-    UserCreate,
-    UserDocumentCreate,
-)
+from app.modules.auth.schemas import Token, UserCreate
+from app.modules.users.models import User
+from app.modules.users.repository import UserRepository
 
 ROLE_CHANGE_RULES: dict[UserRole, dict[UserRole, set[UserRole]]] = {
     UserRole.ADMIN: {
@@ -42,45 +36,11 @@ class AuthService:
         if existing_user is not None:
             raise EmailAlreadyRegisteredError
 
-        document: UserDocument | None = None
-        if user_create.document is not None:
-            doc_type = self.repository.get_document_type_by_id(
-                user_create.document.type_id
-            )
-            if doc_type is None:
-                raise DocumentTypeNotFoundError
-
-            document = UserDocument(
-                type_id=user_create.document.type_id,
-                value=user_create.document.value,
-            )
-
         return self.repository.create(
             email=user_create.email,
             full_name=user_create.full_name,
             hashed_password=hash_password(user_create.password),
             role=UserRole(user_create.role),
-            document=document,
-        )
-
-    def create_user_document(
-        self,
-        *,
-        current_user: User,
-        doc_create: UserDocumentCreate,
-    ) -> UserDocument:
-        existing_doc = self.repository.get_document_by_user_id(current_user.id)
-        if existing_doc is not None or current_user.document is not None:
-            raise DocumentAlreadyExistsError
-
-        doc_type = self.repository.get_document_type_by_id(doc_create.type_id)
-        if doc_type is None:
-            raise DocumentTypeNotFoundError
-
-        return self.repository.create_user_document(
-            user_id=current_user.id,
-            type_id=doc_create.type_id,
-            value=doc_create.value,
         )
 
     def login(self, *, email: str, password: str) -> Token:
@@ -111,4 +71,5 @@ class AuthService:
         if allowed_target_roles is None or new_role not in allowed_target_roles:
             raise RoleChangeNotAllowedError
 
-        return self.repository.update_role(target_user, new_role)
+        target_user.role = new_role.value
+        return self.repository.save(target_user)

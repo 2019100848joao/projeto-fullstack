@@ -9,9 +9,9 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.modules.auth.enums import UserRole
-from app.modules.auth.models import User
-from app.modules.auth.repository import UserRepository
 from app.modules.auth.service import AuthService
+from app.modules.users.models import User
+from app.modules.users.repository import UserRepository
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -74,7 +74,6 @@ def require_roles(*allowed_roles: UserRole) -> Callable[[User], User]:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have permission to access this resource",
             )
-
         return current_user
 
     return dependency
