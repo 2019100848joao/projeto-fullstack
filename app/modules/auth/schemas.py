@@ -1,29 +1,15 @@
-from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field
 
 from app.modules.auth.enums import UserRole
+from app.modules.users.schemas import UserDocumentCreate
 
 
 class RegistrationRole(StrEnum):
     PATIENT = "patient"
     DOCTOR = "doctor"
     ATTENDANT = "attendant"
-
-
-class UserDocumentCreate(BaseModel):
-    type_id: str = Field(min_length=26, max_length=26)
-    value: str = Field(min_length=1, max_length=255)
-
-
-class UserDocumentRead(BaseModel):
-    id: str
-    user_id: str
-    type_id: str
-    value: str
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 class UserCreate(BaseModel):
@@ -37,18 +23,6 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=128)
-
-
-class UserRead(BaseModel):
-    id: str
-    email: EmailStr
-    full_name: str
-    role: UserRole
-    document: UserDocumentRead | None = None
-    is_active: bool
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 class Token(BaseModel):

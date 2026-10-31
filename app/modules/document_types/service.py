@@ -9,3 +9,6 @@ class DocumentTypeService:
 
     def create(self, doc_type_create: DocumentTypeCreate) -> DocumentType:
         return self.repository.create(doc_type=doc_type_create.type)
+
+    def list_all(self) -> list[DocumentType]:
+        return self.repository.list_all()

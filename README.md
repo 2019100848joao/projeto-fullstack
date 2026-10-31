@@ -64,7 +64,12 @@ python -c "from app.core.migrations import run_migrations; run_migrations()"
 - `POST /auth/register` creates a user account.
 - `POST /auth/login` returns a JWT access token from an `email` and `password` JSON body.
 - `GET /auth/me` returns the authenticated user.
+- `POST /users/me/documents` adds a document for the authenticated user (one per type).
+- `GET /document-types` lists available document types without authentication.
+- `POST /document-types` creates a document type for administrators.
 - `PATCH /auth/users/{user_id}/role` changes a user role when the authenticated user has permission.
+
+User responses include `documents` with every document. The existing `document` field remains for compatibility and contains the first document.
 
 ## Auth Roles
 

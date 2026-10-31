@@ -5,7 +5,7 @@ from fastapi import HTTPException
 
 from app.modules.auth.dependencies import require_roles
 from app.modules.auth.enums import UserRole
-from app.modules.auth.models import User
+from app.modules.users.models import User
 
 
 def make_user(role: UserRole) -> User:

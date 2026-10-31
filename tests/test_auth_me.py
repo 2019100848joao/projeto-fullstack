@@ -7,7 +7,7 @@ os.environ["RUN_MIGRATIONS_ON_STARTUP"] = "false"
 
 from app.main import app
 from app.modules.auth.dependencies import get_current_user
-from app.modules.auth.models import User, UserDocument
+from app.modules.users.models import User, UserDocument
 
 
 def override_current_user() -> User:
@@ -15,12 +15,20 @@ def override_current_user() -> User:
         id="01K4SRY37DGE7K5YWWKNB0RESW",
         email="doctor@example.com",
         full_name="Dr. Example",
-        document=UserDocument(
-            id="01K4SRY37DGE7K5YWWKNB0DOC1",
-            user_id="01K4SRY37DGE7K5YWWKNB0RESW",
-            value="CRM-123456",
-            type_id="01K4SRY37DGE7K5YWWKNB0TYPE",
-        ),
+        documents=[
+            UserDocument(
+                id="01K4SRY37DGE7K5YWWKNB0DOC1",
+                user_id="01K4SRY37DGE7K5YWWKNB0RESW",
+                value="CRM-123456",
+                type_id="01K4SRY37DGE7K5YWWKNB0TYPE",
+            ),
+            UserDocument(
+                id="01K4SRY37DGE7K5YWWKNB0DOC2",
+                user_id="01K4SRY37DGE7K5YWWKNB0RESW",
+                value="123.456.789-00",
+                type_id="01K4SRY37DGE7K5YWWKNB0TYP2",
+            ),
+        ],
         hashed_password="not-returned",
         role="doctor",
         is_active=True,
@@ -49,6 +57,20 @@ def test_me_returns_current_user() -> None:
             "type_id": "01K4SRY37DGE7K5YWWKNB0TYPE",
             "value": "CRM-123456",
         },
+        "documents": [
+            {
+                "id": "01K4SRY37DGE7K5YWWKNB0DOC1",
+                "user_id": "01K4SRY37DGE7K5YWWKNB0RESW",
+                "type_id": "01K4SRY37DGE7K5YWWKNB0TYPE",
+                "value": "CRM-123456",
+            },
+            {
+                "id": "01K4SRY37DGE7K5YWWKNB0DOC2",
+                "user_id": "01K4SRY37DGE7K5YWWKNB0RESW",
+                "type_id": "01K4SRY37DGE7K5YWWKNB0TYP2",
+                "value": "123.456.789-00",
+            },
+        ],
         "is_active": True,
         "created_at": "2026-09-09T00:00:00Z",
     }

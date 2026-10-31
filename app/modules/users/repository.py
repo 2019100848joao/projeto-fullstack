@@ -1,9 +1,14 @@
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.auth.enums import UserRole
-from app.modules.auth.models import User, UserDocument
 from app.modules.document_types.models import DocumentType
+from app.modules.users.exceptions import (
+    DocumentAlreadyExistsError,
+    DocumentValueAlreadyExistsError,
+)
+from app.modules.users.models import User, UserDocument
 
 
 class UserRepository:
@@ -17,8 +22,7 @@ class UserRepository:
         statement = select(User).where(User.email == email)
         return self.db.scalar(statement)
 
-    def update_role(self, user: User, role: UserRole) -> User:
-        user.role = role.value
+    def save(self, user: User) -> User:
         self.db.commit()
         self.db.refresh(user)
         return user
@@ -37,18 +41,29 @@ class UserRepository:
             full_name=full_name,
             hashed_password=hashed_password,
             role=role.value,
-            document=document,
+            documents=[document] if document is not None else [],
         )
         self.db.add(user)
-        self.db.commit()
+        try:
+            self.db.commit()
+        except IntegrityError as exc:
+            self.db.rollback()
+            if _is_duplicate_document_value(exc):
+                raise DocumentValueAlreadyExistsError from exc
+            raise
         self.db.refresh(user)
         return user
 
     def get_document_type_by_id(self, type_id: str) -> DocumentType | None:
         return self.db.get(DocumentType, type_id)
 
-    def get_document_by_user_id(self, user_id: str) -> UserDocument | None:
-        statement = select(UserDocument).where(UserDocument.user_id == user_id)
+    def get_document_by_user_and_type(
+        self, user_id: str, type_id: str
+    ) -> UserDocument | None:
+        statement = select(UserDocument).where(
+            UserDocument.user_id == user_id,
+            UserDocument.type_id == type_id,
+        )
         return self.db.scalar(statement)
 
     def create_user_document(
@@ -64,6 +79,22 @@ class UserRepository:
             value=value,
         )
         self.db.add(document)
-        self.db.commit()
+        try:
+            self.db.commit()
+        except IntegrityError as exc:
+            self.db.rollback()
+            if self.get_document_by_user_and_type(user_id, type_id) is not None:
+                raise DocumentAlreadyExistsError from exc
+            if _is_duplicate_document_value(exc):
+                raise DocumentValueAlreadyExistsError from exc
+            raise
         self.db.refresh(document)
         return document
+
+
+def _is_duplicate_document_value(exc: IntegrityError) -> bool:
+    diagnostic = getattr(exc.orig, "diag", None)
+    return (
+        getattr(diagnostic, "constraint_name", None)
+        == "ux_user_documents_type_value"
+    )
