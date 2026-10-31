@@ -1,9 +1,8 @@
 from enum import StrEnum
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.modules.auth.enums import UserRole
-from app.modules.users.schemas import UserDocumentCreate
 
 
 class RegistrationRole(StrEnum):
@@ -17,7 +16,8 @@ class UserCreate(BaseModel):
     full_name: str = Field(min_length=1, max_length=255)
     password: str = Field(min_length=8, max_length=128)
     role: RegistrationRole = RegistrationRole.PATIENT
-    document: UserDocumentCreate | None = None
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class UserLogin(BaseModel):

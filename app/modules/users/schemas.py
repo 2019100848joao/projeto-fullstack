@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -16,6 +17,9 @@ class UserDocumentCreate(BaseModel):
         if not any(character.isalnum() for character in value):
             raise ValueError("Document value must contain a letter or digit")
         return value
+
+
+UserDocumentBatchCreate = Annotated[list[UserDocumentCreate], Field(min_length=1)]
 
 
 class UserDocumentRead(BaseModel):

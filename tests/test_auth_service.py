@@ -51,17 +51,13 @@ class FakeUserRepository:
         full_name: str,
         hashed_password: str,
         role: UserRole = UserRole.PATIENT,
-        document: UserDocument | None = None,
     ) -> User:
         self.created_role = role
-        if document is not None:
-            document.id = "01K4SRY37DGE7K5YWWKNB0DOC1"
-            document.user_id = "01K4SRY37DGE7K5YWWKNB0RESW"
         return User(
             id="01K4SRY37DGE7K5YWWKNB0RESW",
             email=email,
             full_name=full_name,
-            documents=[document] if document is not None else [],
+            documents=[],
             hashed_password=hashed_password,
             role=role.value,
             is_active=True,
@@ -80,20 +76,23 @@ class FakeUserRepository:
             return self.user_document
         return None
 
-    def create_user_document(
+    def create_user_documents(
         self,
         *,
         user_id: str,
-        type_id: str,
-        value: str,
-    ) -> UserDocument:
-        created = UserDocument(
-            id="01K4SRY37DGE7K5YWWKNB0DOC1",
-            user_id=user_id,
-            type_id=type_id,
-            value=value,
-        )
-        self.user_document = created
+        documents: list[tuple[str, str]],
+    ) -> list[UserDocument]:
+        created = [
+            UserDocument(
+                id="01K4SRY37DGE7K5YWWKNB0DOC1",
+                user_id=user_id,
+                type_id=type_id,
+                value=value,
+            )
+            for type_id, value in documents
+        ]
+        if created:
+            self.user_document = created[-1]
         return created
 
 
@@ -141,42 +140,18 @@ def test_register_accepts_non_admin_role() -> None:
     assert user.document is None
 
 
-def test_register_with_document_creates_user_and_document() -> None:
-    doc_type = DocumentType(id="01K4SRY37DGE7K5YWWKNB0TYPE", type="CPF")
-    repository = FakeUserRepository(doc_type=doc_type)
-    service = AuthService(repository)
-
-    user = service.register(
-        UserCreate(
-            email="patient@example.com",
-            full_name="Patient Example",
-            password="password123",
-            document=UserDocumentCreate(
-                type_id="01K4SRY37DGE7K5YWWKNB0TYPE",
-                value="123.456.789-00",
-            ),
-        )
-    )
-
-    assert user.document is not None
-    assert user.document.type_id == "01K4SRY37DGE7K5YWWKNB0TYPE"
-    assert user.document.value == "123.456.789-00"
-
-
-def test_register_with_unknown_document_type_raises_error() -> None:
-    service = AuthService(FakeUserRepository())
+def test_create_user_document_with_unknown_type_raises_error() -> None:
+    service = UserService(FakeUserRepository())
 
     with pytest.raises(DocumentTypeNotFoundError):
-        service.register(
-            UserCreate(
-                email="patient@example.com",
-                full_name="Patient Example",
-                password="password123",
-                document=UserDocumentCreate(
+        service.create_user_documents(
+            current_user=make_user(UserRole.PATIENT),
+            doc_creates=[
+                UserDocumentCreate(
                     type_id="01K4SRY37DGE7K5YWWKNB0TYPE",
                     value="123.456.789-00",
-                ),
-            )
+                )
+            ],
         )
 
 
@@ -185,14 +160,18 @@ def test_create_user_document_links_to_current_user() -> None:
     service = UserService(FakeUserRepository(doc_type=doc_type))
     current_user = make_user(UserRole.PATIENT)
 
-    doc = service.create_user_document(
+    docs = service.create_user_documents(
         current_user=current_user,
-        doc_create=UserDocumentCreate(
-            type_id="01K4SRY37DGE7K5YWWKNB0TYPE",
-            value="123.456.789-00",
-        ),
+        doc_creates=[
+            UserDocumentCreate(
+                type_id="01K4SRY37DGE7K5YWWKNB0TYPE",
+                value="123.456.789-00",
+            )
+        ],
     )
 
+    assert len(docs) == 1
+    doc = docs[0]
     assert doc.user_id == current_user.id
     assert doc.type_id == "01K4SRY37DGE7K5YWWKNB0TYPE"
     assert doc.value == "123.456.789-00"
@@ -208,12 +187,14 @@ def test_create_user_document_raises_when_already_exists() -> None:
     service = UserService(FakeUserRepository(user_document=existing_doc))
 
     with pytest.raises(DocumentAlreadyExistsError):
-        service.create_user_document(
+        service.create_user_documents(
             current_user=make_user(UserRole.PATIENT, document=existing_doc),
-            doc_create=UserDocumentCreate(
-                type_id="01K4SRY37DGE7K5YWWKNB0TYPE",
-                value="999.999.999-99",
-            ),
+            doc_creates=[
+                UserDocumentCreate(
+                    type_id="01K4SRY37DGE7K5YWWKNB0TYPE",
+                    value="999.999.999-99",
+                )
+            ],
         )
 
 
@@ -229,15 +210,17 @@ def test_create_user_document_allows_another_type() -> None:
         FakeUserRepository(doc_type=new_type, user_document=existing_doc)
     )
 
-    created = service.create_user_document(
+    created = service.create_user_documents(
         current_user=make_user(UserRole.PATIENT, document=existing_doc),
-        doc_create=UserDocumentCreate(
-            type_id=new_type.id,
-            value="CRM-123456",
-        ),
+        doc_creates=[
+            UserDocumentCreate(
+                type_id=new_type.id,
+                value="CRM-123456",
+            )
+        ],
     )
 
-    assert created.type_id == new_type.id
+    assert created[0].type_id == new_type.id
 
 
 def test_login_raises_domain_error_when_credentials_are_invalid() -> None:

@@ -12,10 +12,6 @@ from app.modules.auth.exceptions import (
 )
 from app.modules.auth.schemas import Token, UserCreate, UserLogin, UserRoleUpdate
 from app.modules.auth.service import AuthService
-from app.modules.users.exceptions import (
-    DocumentTypeNotFoundError,
-    DocumentValueAlreadyExistsError,
-)
 from app.modules.users.models import User
 from app.modules.users.schemas import UserRead
 
@@ -32,16 +28,6 @@ def register(user_create: UserCreate, auth_service: AuthServiceDep) -> User:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email is already registered",
-        ) from exc
-    except DocumentTypeNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document type not found",
-        ) from exc
-    except DocumentValueAlreadyExistsError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Document value is already registered",
         ) from exc
 
 

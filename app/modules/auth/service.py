@@ -8,8 +8,7 @@ from app.modules.auth.exceptions import (
     UserNotFoundError,
 )
 from app.modules.auth.schemas import Token, UserCreate
-from app.modules.users.exceptions import DocumentTypeNotFoundError
-from app.modules.users.models import User, UserDocument
+from app.modules.users.models import User
 from app.modules.users.repository import UserRepository
 
 ROLE_CHANGE_RULES: dict[UserRole, dict[UserRole, set[UserRole]]] = {
@@ -37,25 +36,11 @@ class AuthService:
         if existing_user is not None:
             raise EmailAlreadyRegisteredError
 
-        document: UserDocument | None = None
-        if user_create.document is not None:
-            doc_type = self.repository.get_document_type_by_id(
-                user_create.document.type_id
-            )
-            if doc_type is None:
-                raise DocumentTypeNotFoundError
-
-            document = UserDocument(
-                type_id=user_create.document.type_id,
-                value=user_create.document.value,
-            )
-
         return self.repository.create(
             email=user_create.email,
             full_name=user_create.full_name,
             hashed_password=hash_password(user_create.password),
             role=UserRole(user_create.role),
-            document=document,
         )
 
     def login(self, *, email: str, password: str) -> Token:

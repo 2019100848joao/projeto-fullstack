@@ -9,7 +9,7 @@ from app.modules.users.exceptions import (
 )
 from app.modules.users.models import UserDocument
 from app.modules.users.schemas import (
-    UserDocumentCreate,
+    UserDocumentBatchCreate,
     UserDocumentRead,
 )
 
@@ -18,18 +18,18 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 @router.post(
     "/me/documents",
-    response_model=UserDocumentRead,
+    response_model=list[UserDocumentRead],
     status_code=status.HTTP_201_CREATED,
 )
 def create_current_user_document(
-    doc_create: UserDocumentCreate,
+    doc_creates: UserDocumentBatchCreate,
     current_user: CurrentUserDep,
     user_service: UserServiceDep,
-) -> UserDocument:
+) -> list[UserDocument]:
     try:
-        return user_service.create_user_document(
+        return user_service.create_user_documents(
             current_user=current_user,
-            doc_create=doc_create,
+            doc_creates=doc_creates,
         )
     except DocumentTypeNotFoundError as exc:
         raise HTTPException(

@@ -34,23 +34,15 @@ class UserRepository:
         full_name: str,
         hashed_password: str,
         role: UserRole = UserRole.PATIENT,
-        document: UserDocument | None = None,
     ) -> User:
         user = User(
             email=email,
             full_name=full_name,
             hashed_password=hashed_password,
             role=role.value,
-            documents=[document] if document is not None else [],
         )
         self.db.add(user)
-        try:
-            self.db.commit()
-        except IntegrityError as exc:
-            self.db.rollback()
-            if _is_duplicate_document_value(exc):
-                raise DocumentValueAlreadyExistsError from exc
-            raise
+        self.db.commit()
         self.db.refresh(user)
         return user
 
@@ -66,30 +58,30 @@ class UserRepository:
         )
         return self.db.scalar(statement)
 
-    def create_user_document(
+    def create_user_documents(
         self,
         *,
         user_id: str,
-        type_id: str,
-        value: str,
-    ) -> UserDocument:
-        document = UserDocument(
-            user_id=user_id,
-            type_id=type_id,
-            value=value,
-        )
-        self.db.add(document)
+        documents: list[tuple[str, str]],
+    ) -> list[UserDocument]:
+        created = [
+            UserDocument(user_id=user_id, type_id=type_id, value=value)
+            for type_id, value in documents
+        ]
+        self.db.add_all(created)
         try:
             self.db.commit()
         except IntegrityError as exc:
             self.db.rollback()
-            if self.get_document_by_user_and_type(user_id, type_id) is not None:
-                raise DocumentAlreadyExistsError from exc
+            for type_id, _ in documents:
+                if self.get_document_by_user_and_type(user_id, type_id) is not None:
+                    raise DocumentAlreadyExistsError from exc
             if _is_duplicate_document_value(exc):
                 raise DocumentValueAlreadyExistsError from exc
             raise
-        self.db.refresh(document)
-        return document
+        for document in created:
+            self.db.refresh(document)
+        return created
 
 
 def _is_duplicate_document_value(exc: IntegrityError) -> bool:
