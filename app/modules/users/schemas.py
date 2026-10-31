@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.modules.auth.enums import UserRole
+from app.modules.document_types.schemas import DocumentTypeRead
 
 
 class UserDocumentCreate(BaseModel):
@@ -20,8 +21,8 @@ class UserDocumentCreate(BaseModel):
 class UserDocumentRead(BaseModel):
     id: str
     user_id: str
-    type_id: str
     value: str
+    document_type: DocumentTypeRead
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -31,7 +32,6 @@ class UserRead(BaseModel):
     email: EmailStr
     full_name: str
     role: UserRole
-    document: UserDocumentRead | None = None
     documents: list[UserDocumentRead] = Field(default_factory=list)
     is_active: bool
     created_at: datetime

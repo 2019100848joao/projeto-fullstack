@@ -81,6 +81,9 @@ class FakeDocumentAuthService:
                 user_id="01K4SRY37DGE7K5YWWKNB0RESW",
                 type_id=user_create.document.type_id,
                 value=user_create.document.value,
+                document_type=DocumentType(
+                    id=user_create.document.type_id, type="CPF"
+                ),
             )
             if user_create.document is not None
             else None
@@ -113,6 +116,7 @@ class FakeDocumentAuthService:
             user_id=current_user.id,
             type_id=doc_create.type_id,
             value=doc_create.value,
+            document_type=DocumentType(id=doc_create.type_id, type="CPF"),
         )
 
 
@@ -269,7 +273,7 @@ def test_user_document_route_is_separate_from_auth_routes() -> None:
         "/auth/register",
         "/auth/login",
         "/auth/me",
-        "/auth/users/{user_id}/role",
+        "/auth/{user_id}/role",
     }
     assert paths["/users/me/documents"]["post"]["tags"] == ["users"]
 
@@ -376,8 +380,11 @@ def test_create_my_document_endpoint_returns_201() -> None:
     assert response.json() == {
         "id": "01K4SRY37DGE7K5YWWKNB0DOC1",
         "user_id": "01K4SRY37DGE7K5YWWKNB0RESW",
-        "type_id": "01K4SRY37DGE7K5YWWKNB0TYPE",
         "value": "123.456.789-00",
+        "document_type": {
+            "id": "01K4SRY37DGE7K5YWWKNB0TYPE",
+            "type": "CPF",
+        },
     }
 
 
@@ -528,7 +535,11 @@ def test_repository_allows_distinct_document_types_for_one_user() -> None:
         )
 
         assert {document.type_id for document in user.documents} == {cpf.id, crm.id}
-        assert len(UserRead.model_validate(user).documents) == 2
+        read_user = UserRead.model_validate(user)
+        assert {document.document_type.type for document in read_user.documents} == {
+            "CPF",
+            "CRM",
+        }
 
 
 def test_register_endpoint_with_document_returns_201() -> None:
@@ -558,18 +569,15 @@ def test_register_endpoint_with_document_returns_201() -> None:
         "email": "patient@example.com",
         "full_name": "Patient Example",
         "role": "patient",
-        "document": {
-            "id": "01K4SRY37DGE7K5YWWKNB0DOC1",
-            "user_id": "01K4SRY37DGE7K5YWWKNB0RESW",
-            "type_id": "01K4SRY37DGE7K5YWWKNB0TYPE",
-            "value": "123.456.789-00",
-        },
         "documents": [
             {
                 "id": "01K4SRY37DGE7K5YWWKNB0DOC1",
                 "user_id": "01K4SRY37DGE7K5YWWKNB0RESW",
-                "type_id": "01K4SRY37DGE7K5YWWKNB0TYPE",
                 "value": "123.456.789-00",
+                "document_type": {
+                    "id": "01K4SRY37DGE7K5YWWKNB0TYPE",
+                    "type": "CPF",
+                },
             }
         ],
         "is_active": True,

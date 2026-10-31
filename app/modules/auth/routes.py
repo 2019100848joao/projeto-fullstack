@@ -67,7 +67,7 @@ def read_current_user(current_user: CurrentUserDep) -> User:
     return current_user
 
 
-@router.patch("/users/{user_id}/role", response_model=UserRead)
+@router.patch("/{user_id}/role", response_model=UserRead)
 def update_user_role(
     user_id: str,
     role_update: UserRoleUpdate,

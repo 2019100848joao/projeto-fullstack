@@ -6,7 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.modules.auth.enums import UserRole
-from app.modules.document_types.models import DocumentType  # noqa: F401
+from app.modules.document_types.models import DocumentType
 
 
 class User(Base):
@@ -58,3 +58,4 @@ class UserDocument(Base):
         ForeignKey("document_type.id", ondelete="CASCADE"),
         index=True,
     )
+    document_type: Mapped[DocumentType] = relationship()

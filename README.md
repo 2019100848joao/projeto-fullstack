@@ -69,7 +69,7 @@ python -c "from app.core.migrations import run_migrations; run_migrations()"
 - `POST /document-types` creates a document type for administrators.
 - `PATCH /auth/users/{user_id}/role` changes a user role when the authenticated user has permission.
 
-User responses include `documents` with every document. The existing `document` field remains for compatibility and contains the first document.
+User responses include `documents`; each document contains `document_type` with its `id` and `type`.
 
 ## Auth Roles
 
