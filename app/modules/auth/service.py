@@ -7,9 +7,9 @@ from app.modules.auth.exceptions import (
     RoleChangeNotAllowedError,
     UserNotFoundError,
 )
-from app.modules.auth.models import User
-from app.modules.auth.repository import UserRepository
 from app.modules.auth.schemas import Token, UserCreate
+from app.modules.users.models import User
+from app.modules.users.repository import UserRepository
 
 ROLE_CHANGE_RULES: dict[UserRole, dict[UserRole, set[UserRole]]] = {
     UserRole.ADMIN: {
@@ -53,9 +53,6 @@ class AuthService:
 
         return Token(access_token=create_access_token(subject=user.id))
 
-    def list_users(self, *, role: UserRole | None = None) -> list[User]:
-        return self.repository.list(role=role)
-
     def update_user_role(
         self,
         *,
@@ -74,4 +71,5 @@ class AuthService:
         if allowed_target_roles is None or new_role not in allowed_target_roles:
             raise RoleChangeNotAllowedError
 
-        return self.repository.update_role(target_user, new_role)
+        target_user.role = new_role.value
+        return self.repository.save(target_user)

@@ -16,7 +16,7 @@ class ExamRepository:
     def get_by_id(self, exam_id: str) -> Exam | None:
         return self.db.get(Exam, exam_id)
 
-    def list(
+    def list_all(
         self,
         *,
         patient_id: str | None = None,

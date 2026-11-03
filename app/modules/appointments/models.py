@@ -6,8 +6,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.modules.appointments.enums import AppointmentStatus
-from app.modules.auth.models import User
 from app.modules.exams.models import Exam
+from app.modules.users.models import User
 
 
 class Appointment(Base):

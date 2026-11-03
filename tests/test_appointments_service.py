@@ -16,7 +16,7 @@ from app.modules.appointments.models import Appointment
 from app.modules.appointments.schemas import AppointmentCreate, AttendanceCreate
 from app.modules.appointments.service import AppointmentService, agenda_period
 from app.modules.auth.enums import UserRole
-from app.modules.auth.models import User
+from app.modules.users.models import User
 
 SCHEDULED_AT = datetime(2026, 10, 14, 13, 0, tzinfo=UTC)
 

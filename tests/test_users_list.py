@@ -7,9 +7,10 @@ from fastapi.testclient import TestClient
 os.environ["RUN_MIGRATIONS_ON_STARTUP"] = "false"
 
 from app.main import app
-from app.modules.auth.dependencies import get_auth_service, get_current_user
+from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.enums import UserRole
-from app.modules.auth.models import User
+from app.modules.users.dependencies import get_user_service
+from app.modules.users.models import User
 
 
 def make_user(role: UserRole) -> User:
@@ -24,7 +25,7 @@ def make_user(role: UserRole) -> User:
     )
 
 
-class FakeAuthService:
+class FakeUserService:
     def __init__(self) -> None:
         self.role: UserRole | None = None
 
@@ -33,13 +34,13 @@ class FakeAuthService:
         return [make_user(UserRole.PATIENT)]
 
 
-def list_users_as(role: UserRole, query: str = "") -> tuple[int, FakeAuthService]:
-    service = FakeAuthService()
+def list_users_as(role: UserRole, query: str = "") -> tuple[int, FakeUserService]:
+    service = FakeUserService()
     app.dependency_overrides[get_current_user] = lambda: make_user(role)
-    app.dependency_overrides[get_auth_service] = lambda: service
+    app.dependency_overrides[get_user_service] = lambda: service
 
     try:
-        response = TestClient(app).get(f"/auth/users{query}")
+        response = TestClient(app).get(f"/users{query}")
     finally:
         app.dependency_overrides.clear()
 
@@ -71,10 +72,10 @@ def test_list_users_rejects_unknown_role() -> None:
 
 def test_list_users_does_not_return_password() -> None:
     app.dependency_overrides[get_current_user] = lambda: make_user(UserRole.ADMIN)
-    app.dependency_overrides[get_auth_service] = FakeAuthService
+    app.dependency_overrides[get_user_service] = FakeUserService
 
     try:
-        response = TestClient(app).get("/auth/users")
+        response = TestClient(app).get("/users")
     finally:
         app.dependency_overrides.clear()
 
@@ -83,4 +84,4 @@ def test_list_users_does_not_return_password() -> None:
 
 
 def test_list_users_requires_authentication() -> None:
-    assert TestClient(app).get("/auth/users").status_code == 401
+    assert TestClient(app).get("/users").status_code == 401

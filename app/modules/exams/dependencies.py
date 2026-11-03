@@ -4,9 +4,9 @@ from fastapi import Depends
 
 from app.modules.auth.dependencies import DbSession, require_roles
 from app.modules.auth.enums import UserRole
-from app.modules.auth.models import User
 from app.modules.exams.repository import ExamRepository
 from app.modules.exams.service import ExamService
+from app.modules.users.models import User
 
 
 def get_exam_service(db: DbSession) -> ExamService:

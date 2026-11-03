@@ -3,7 +3,6 @@ from datetime import UTC, datetime
 import pytest
 
 from app.modules.auth.enums import UserRole
-from app.modules.auth.models import User
 from app.modules.exams.enums import ExamStatus
 from app.modules.exams.exceptions import (
     ExamAccessDeniedError,
@@ -12,6 +11,7 @@ from app.modules.exams.exceptions import (
 )
 from app.modules.exams.models import Exam
 from app.modules.exams.service import ExamService
+from app.modules.users.models import User
 
 SCHEDULED_AT = datetime(2026, 10, 16, 11, 0, tzinfo=UTC)
 
@@ -53,7 +53,7 @@ class FakeExamRepository:
     def get_by_id(self, exam_id: str) -> Exam | None:
         return self.exam
 
-    def list(self, **filters: object) -> list[Exam]:
+    def list_all(self, **filters: object) -> list[Exam]:
         self.list_filters = filters
         return []
 

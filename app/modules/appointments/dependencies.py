@@ -6,8 +6,8 @@ from app.modules.appointments.repository import AppointmentRepository
 from app.modules.appointments.service import AppointmentService
 from app.modules.auth.dependencies import DbSession, require_roles
 from app.modules.auth.enums import UserRole
-from app.modules.auth.models import User
-from app.modules.auth.repository import UserRepository
+from app.modules.users.models import User
+from app.modules.users.repository import UserRepository
 
 
 def get_appointment_service(db: DbSession) -> AppointmentService:

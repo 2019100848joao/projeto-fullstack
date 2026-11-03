@@ -20,8 +20,8 @@ from app.modules.appointments.schemas import (
     AttendanceCreate,
 )
 from app.modules.auth.enums import UserRole
-from app.modules.auth.models import User
-from app.modules.auth.repository import UserRepository
+from app.modules.users.models import User
+from app.modules.users.repository import UserRepository
 
 
 def agenda_period(view: AgendaView, day: date) -> tuple[datetime, datetime]:
@@ -84,7 +84,7 @@ class AppointmentService:
         doctor_id: str | None = None,
         patient_id: str | None = None,
     ) -> list[Appointment]:
-        return self.repository.list(doctor_id=doctor_id, patient_id=patient_id)
+        return self.repository.list_all(doctor_id=doctor_id, patient_id=patient_id)
 
     def reschedule(self, *, appointment_id: str, scheduled_at: datetime) -> Appointment:
         appointment = self._get_scheduled(appointment_id)

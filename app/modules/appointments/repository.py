@@ -15,7 +15,7 @@ class AppointmentRepository:
     def get_by_id(self, appointment_id: str) -> Appointment | None:
         return self.db.get(Appointment, appointment_id)
 
-    def list(
+    def list_all(
         self,
         *,
         doctor_id: str | None = None,

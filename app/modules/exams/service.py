@@ -1,7 +1,6 @@
 from datetime import datetime
 
 from app.modules.auth.enums import UserRole
-from app.modules.auth.models import User
 from app.modules.exams.enums import ExamStatus
 from app.modules.exams.exceptions import (
     ExamAccessDeniedError,
@@ -10,6 +9,7 @@ from app.modules.exams.exceptions import (
 )
 from app.modules.exams.models import Exam
 from app.modules.exams.repository import ExamRepository
+from app.modules.users.models import User
 
 STAFF_ROLES = {UserRole.ATTENDANT, UserRole.ADMIN}
 
@@ -28,12 +28,12 @@ class ExamService:
         role = UserRole(current_user.role)
 
         if role in STAFF_ROLES:
-            return self.repository.list(patient_id=patient_id, status=status)
+            return self.repository.list_all(patient_id=patient_id, status=status)
 
         if role == UserRole.PATIENT:
-            return self.repository.list(patient_id=current_user.id, status=status)
+            return self.repository.list_all(patient_id=current_user.id, status=status)
 
-        return self.repository.list(
+        return self.repository.list_all(
             patient_id=patient_id,
             status=status,
             attended_by_doctor_id=current_user.id,
