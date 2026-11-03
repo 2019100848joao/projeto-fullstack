@@ -1,4 +1,3 @@
-from datetime import datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -12,43 +11,18 @@ class RegistrationRole(StrEnum):
     ATTENDANT = "attendant"
 
 
-class UserDocumentCreate(BaseModel):
-    type_id: str = Field(min_length=26, max_length=26)
-    value: str = Field(min_length=1, max_length=255)
-
-
-class UserDocumentRead(BaseModel):
-    id: str
-    user_id: str
-    type_id: str
-    value: str
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 class UserCreate(BaseModel):
     email: EmailStr
     full_name: str = Field(min_length=1, max_length=255)
     password: str = Field(min_length=8, max_length=128)
     role: RegistrationRole = RegistrationRole.PATIENT
-    document: UserDocumentCreate | None = None
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class UserLogin(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=128)
-
-
-class UserRead(BaseModel):
-    id: str
-    email: EmailStr
-    full_name: str
-    role: UserRole
-    document: UserDocumentRead | None = None
-    is_active: bool
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 class Token(BaseModel):
