@@ -4,7 +4,3 @@ class DocumentTypeNotFoundError(Exception):
 
 class DocumentAlreadyExistsError(Exception):
     pass
-
-
-class DocumentValueAlreadyExistsError(Exception):
-    pass

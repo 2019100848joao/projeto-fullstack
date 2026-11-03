@@ -4,10 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.auth.enums import UserRole
 from app.modules.document_types.models import DocumentType
-from app.modules.users.exceptions import (
-    DocumentAlreadyExistsError,
-    DocumentValueAlreadyExistsError,
-)
+from app.modules.users.exceptions import DocumentAlreadyExistsError
 from app.modules.users.models import User, UserDocument
 
 
@@ -76,17 +73,7 @@ class UserRepository:
             for type_id, _ in documents:
                 if self.get_document_by_user_and_type(user_id, type_id) is not None:
                     raise DocumentAlreadyExistsError from exc
-            if _is_duplicate_document_value(exc):
-                raise DocumentValueAlreadyExistsError from exc
             raise
         for document in created:
             self.db.refresh(document)
         return created
-
-
-def _is_duplicate_document_value(exc: IntegrityError) -> bool:
-    diagnostic = getattr(exc.orig, "diag", None)
-    return (
-        getattr(diagnostic, "constraint_name", None)
-        == "ux_user_documents_type_value"
-    )

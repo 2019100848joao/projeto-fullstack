@@ -137,7 +137,7 @@ def test_register_accepts_non_admin_role() -> None:
 
     assert repository.created_role == UserRole.DOCTOR
     assert user.role == "doctor"
-    assert user.document is None
+    assert user.documents == []
 
 
 def test_create_user_document_with_unknown_type_raises_error() -> None:
@@ -321,10 +321,10 @@ def test_user_can_hold_single_document() -> None:
     )
     user = make_user(UserRole.PATIENT, document=user_doc)
 
-    assert user.document is not None
-    assert user.document.id == "01K4SRY37DGE7K5YWWKNB0DOC1"
-    assert user.document.value == "123.456.789-00"
-    assert user.document.type_id == doc_type.id
+    assert len(user.documents) == 1
+    assert user.documents[0].id == "01K4SRY37DGE7K5YWWKNB0DOC1"
+    assert user.documents[0].value == "123.456.789-00"
+    assert user.documents[0].type_id == doc_type.id
 
 
 def make_user(

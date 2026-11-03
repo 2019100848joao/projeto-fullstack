@@ -31,10 +31,6 @@ class User(Base):
         server_default=func.now(),
     )
 
-    @property
-    def document(self) -> "UserDocument | None":
-        return self.documents[0] if self.documents else None
-
 
 class UserDocument(Base):
     __tablename__ = "user_documents"
