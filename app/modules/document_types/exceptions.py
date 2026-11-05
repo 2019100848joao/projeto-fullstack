@@ -1,0 +1,2 @@
+class DocumentTypeAlreadyExistsError(Exception):
+    pass
