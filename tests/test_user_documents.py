@@ -23,7 +23,6 @@ from app.modules.users.dependencies import get_user_service
 from app.modules.users.exceptions import (
     DocumentAlreadyExistsError,
     DocumentTypeNotFoundError,
-    DocumentValueAlreadyExistsError,
 )
 from app.modules.users.models import User, UserDocument
 from app.modules.users.repository import UserRepository
@@ -64,11 +63,9 @@ class FakeDocumentAuthService:
         *,
         missing_type: bool = False,
         already_exists: bool = False,
-        duplicate_value: bool = False,
     ) -> None:
         self.missing_type = missing_type
         self.already_exists = already_exists
-        self.duplicate_value = duplicate_value
 
     def register(self, user_create: UserCreate) -> User:
         return User(
@@ -92,8 +89,6 @@ class FakeDocumentAuthService:
             raise DocumentTypeNotFoundError
         if self.already_exists:
             raise DocumentAlreadyExistsError
-        if self.duplicate_value:
-            raise DocumentValueAlreadyExistsError
         return [
             UserDocument(
                 id="01K4SRY37DGE7K5YWWKNB0DOC1",
@@ -195,12 +190,11 @@ def test_user_document_relationship_one_to_many() -> None:
         created_at=datetime(2026, 9, 9, tzinfo=UTC),
     )
 
-    assert user.document is user_doc
     assert user.documents == [user_doc]
-    assert user.document.user_id == user.id
+    assert user.documents[0].user_id == user.id
 
 
-def test_user_without_document_defaults_to_none() -> None:
+def test_user_without_documents_defaults_to_empty_list() -> None:
     user = User(
         id="01K4SRY37DGE7K5YWWKNB0RESW",
         email="patient@example.com",
@@ -211,7 +205,7 @@ def test_user_without_document_defaults_to_none() -> None:
         created_at=datetime(2026, 9, 9, tzinfo=UTC),
     )
 
-    assert user.document is None
+    assert user.documents == []
 
 
 def test_user_documents_table_schema_constraints() -> None:
@@ -345,7 +339,18 @@ def test_document_type_repository_rejects_normalized_duplicate() -> None:
             repository.create(doc_type=" cpf ")
 
 
-def test_create_my_documents_endpoint_returns_list_for_one_document() -> None:
+def test_document_type_repository_strips_type_before_saving() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        document_type = DocumentTypeRepository(db).create(doc_type=" CPF ")
+
+        assert document_type.type == "CPF"
+        assert db.scalar(select(DocumentType)).type == "CPF"
+
+
+def test_create_my_documents_endpoint_accepts_one_document() -> None:
     app.dependency_overrides[get_current_user] = override_current_user
     app.dependency_overrides[get_user_service] = FakeDocumentAuthService
 
@@ -500,29 +505,6 @@ def test_create_my_document_endpoint_returns_409_when_already_exists() -> None:
     assert response.json() == {"detail": "User already has a document of this type"}
 
 
-def test_create_my_document_returns_409_when_value_is_registered() -> None:
-    app.dependency_overrides[get_current_user] = override_current_user
-    app.dependency_overrides[get_user_service] = lambda: FakeDocumentAuthService(
-        duplicate_value=True
-    )
-
-    try:
-        response = TestClient(app).post(
-            "/users/me/documents",
-            json=[
-                {
-                    "type_id": "01K4SRY37DGE7K5YWWKNB0TYPE",
-                    "value": "123.456.789-00",
-                }
-            ],
-        )
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 409
-    assert response.json() == {"detail": "Document value is already registered"}
-
-
 def test_create_my_document_rejects_punctuation_only_value() -> None:
     app.dependency_overrides[get_current_user] = override_current_user
 
@@ -567,6 +549,40 @@ def test_repository_maps_duplicate_user_document_to_domain_error() -> None:
                 user_id=user.id,
                 documents=[(doc_type.id, "999.999.999-99")],
             )
+
+
+def test_different_users_can_register_the_same_document_value() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        doc_type = DocumentType(type="CPF")
+        db.add(doc_type)
+        db.commit()
+        repository = UserRepository(db)
+        first_user = repository.create(
+            email="first@example.com",
+            full_name="First User",
+            hashed_password="hashed-password",
+        )
+        second_user = repository.create(
+            email="second@example.com",
+            full_name="Second User",
+            hashed_password="hashed-password",
+        )
+
+        for user in (first_user, second_user):
+            UserService(repository).create_user_documents(
+                current_user=user,
+                doc_creates=[
+                    UserDocumentCreate(type_id=doc_type.id, value="123.456.789-00")
+                ],
+            )
+
+        assert {document.user_id for document in db.scalars(select(UserDocument))} == {
+            first_user.id,
+            second_user.id,
+        }
 
 
 def test_service_creates_distinct_document_types_in_one_batch() -> None:

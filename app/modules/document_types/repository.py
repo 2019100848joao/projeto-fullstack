@@ -18,6 +18,7 @@ class DocumentTypeRepository:
         return list(self.db.scalars(statement).all())
 
     def create(self, *, doc_type: str) -> DocumentType:
+        doc_type = doc_type.strip()
         document_type = DocumentType(type=doc_type)
         self.db.add(document_type)
         try:

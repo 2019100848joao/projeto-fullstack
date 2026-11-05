@@ -6,7 +6,6 @@ from app.modules.users.dependencies import UserServiceDep
 from app.modules.users.exceptions import (
     DocumentAlreadyExistsError,
     DocumentTypeNotFoundError,
-    DocumentValueAlreadyExistsError,
 )
 from app.modules.users.models import User, UserDocument
 from app.modules.users.schemas import (
@@ -51,9 +50,4 @@ def create_current_user_document(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="User already has a document of this type",
-        ) from exc
-    except DocumentValueAlreadyExistsError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Document value is already registered",
         ) from exc

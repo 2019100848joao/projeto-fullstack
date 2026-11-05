@@ -65,7 +65,7 @@ python -c "from app.core.migrations import run_migrations; run_migrations()"
 - `POST /auth/login` returns a JWT access token from an `email` and `password` JSON body.
 - `GET /auth/me` returns the authenticated user.
 - `GET /users?role=patient|doctor|attendant|admin` lists users for `admin`, `doctor` and `attendant`.
-- `POST /users/me/documents` accepts a nonempty array of documents for the authenticated user (one per type) and returns an array.
+- `POST /users/me/documents` accepts a nonempty array of documents for the authenticated user (one per type) and returns the created documents. The same value can be used by different users.
 - `GET /document-types` lists available document types without authentication.
 - `POST /document-types` creates a document type for administrators.
 - `PATCH /auth/{user_id}/role` changes a user role when the authenticated user has permission.
