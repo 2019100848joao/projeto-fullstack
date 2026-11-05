@@ -8,24 +8,24 @@ from app.modules.appointments.dependencies import (
     SchedulerUserDep,
     get_appointment_service,
 )
-from app.modules.appointments.enums import AgendaView
+from app.modules.appointments.enums import CalendarView
 from app.modules.appointments.exceptions import (
-    AgendaDoctorRequiredError,
     AppointmentAccessDeniedError,
     AppointmentNotFoundError,
     AppointmentNotScheduledError,
+    CalendarDoctorRequiredError,
     DoctorUnavailableError,
     InvalidDoctorError,
     InvalidPatientError,
 )
 from app.modules.appointments.models import Appointment
 from app.modules.appointments.schemas import (
-    AgendaRead,
     AppointmentCreate,
     AppointmentDetailRead,
     AppointmentRead,
     AppointmentReschedule,
     AttendanceCreate,
+    CalendarRead,
 )
 from app.modules.appointments.service import AppointmentService
 
@@ -99,14 +99,14 @@ def list_appointments(
 
 
 @router.get(
-    "/agenda",
-    response_model=AgendaRead,
-    summary="Doctor agenda by day, week or month (doctor, admin)",
+    "/calendar",
+    response_model=CalendarRead,
+    summary="Doctor calendar by day, week or month (doctor, admin)",
 )
-def read_agenda(
+def read_calendar(
     current_user: DoctorOrAdminUserDep,
     service: AppointmentServiceDep,
-    view: AgendaView = AgendaView.DAY,
+    view: CalendarView = CalendarView.DAY,
     day: Annotated[
         date | None,
         Query(alias="date", description="Reference date. Defaults to today."),
@@ -115,15 +115,15 @@ def read_agenda(
         str | None,
         Query(description="Required for admin. Doctors always get their own."),
     ] = None,
-) -> AgendaRead:
+) -> CalendarRead:
     try:
-        return service.get_agenda(
+        return service.get_calendar(
             current_user=current_user,
             view=view,
             day=day,
             doctor_id=doctor_id,
         )
-    except AgendaDoctorRequiredError as exc:
+    except CalendarDoctorRequiredError as exc:
         raise HTTPException(
             status_code=422,
             detail="doctor_id is required for admin users",

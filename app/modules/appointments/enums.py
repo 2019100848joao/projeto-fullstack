@@ -7,7 +7,7 @@ class AppointmentStatus(StrEnum):
     COMPLETED = "completed"
 
 
-class AgendaView(StrEnum):
+class CalendarView(StrEnum):
     DAY = "day"
     WEEK = "week"
     MONTH = "month"

@@ -3,7 +3,7 @@ from typing import Annotated
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints
 
-from app.modules.appointments.enums import AgendaView, AppointmentStatus
+from app.modules.appointments.enums import AppointmentStatus, CalendarView
 from app.modules.exams.enums import ExamStatus
 
 ExamName = Annotated[
@@ -62,8 +62,8 @@ class AppointmentDetailRead(AppointmentRead):
     exams: list[ExamSummary]
 
 
-class AgendaRead(BaseModel):
-    view: AgendaView
+class CalendarRead(BaseModel):
+    view: CalendarView
     start: datetime
     end: datetime
     appointments: list[AppointmentDetailRead]

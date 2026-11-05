@@ -54,8 +54,8 @@ def request_as(
         (UserRole.DOCTOR, "POST", "/appointments", APPOINTMENT_BODY),
         (UserRole.DOCTOR, "GET", "/appointments", None),
         (UserRole.DOCTOR, "POST", "/appointments/id/cancel", None),
-        (UserRole.ATTENDANT, "GET", "/appointments/agenda", None),
-        (UserRole.PATIENT, "GET", "/appointments/agenda", None),
+        (UserRole.ATTENDANT, "GET", "/appointments/calendar", None),
+        (UserRole.PATIENT, "GET", "/appointments/calendar", None),
         (UserRole.ATTENDANT, "POST", "/appointments/id/attendance", {}),
         (UserRole.PATIENT, "GET", "/appointments/id", None),
         (UserRole.ATTENDANT, "GET", "/exams/results", None),
@@ -76,7 +76,7 @@ def test_role_without_permission_is_forbidden(
 @pytest.mark.parametrize(
     ("method", "path"),
     [
-        ("GET", "/appointments/agenda"),
+        ("GET", "/appointments/calendar"),
         ("GET", "/exams"),
         ("GET", "/exams/results"),
     ],

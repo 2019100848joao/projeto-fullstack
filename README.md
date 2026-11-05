@@ -70,12 +70,12 @@ python -c "from app.core.migrations import run_migrations; run_migrations()"
 - `POST /document-types` creates a document type for administrators.
 - `PATCH /auth/{user_id}/role` changes a user role when the authenticated user has permission.
 - `POST /appointments`, `GET /appointments`, `PATCH /appointments/{id}` and `POST /appointments/{id}/cancel` let an attendant schedule, list, reschedule and cancel appointments.
-- `GET /appointments/agenda?view=day|week|month&date=YYYY-MM-DD` returns the authenticated doctor agenda.
+- `GET /appointments/calendar?view=day|week|month&date=YYYY-MM-DD` returns the authenticated doctor calendar.
 - `POST /appointments/{id}/attendance` lets the appointment doctor register the attendance and request exams.
 - `GET /appointments/{id}` returns the appointment with its attendance record to its doctor.
 - `GET /exams` and `GET /exams/{id}` return the exams visible to the authenticated user.
 - `GET /exams/results` returns available exam results to patients and doctors.
-- `admin` users can call every appointment and exam endpoint; on the agenda they must pass `doctor_id`.
+- `admin` users can call every appointment and exam endpoint; on the calendar they must pass `doctor_id`.
 - `POST /exams/{id}/schedule`, `POST /exams/{id}/perform` and `POST /exams/{id}/result` let an attendant move an exam through its statuses.
 
 User responses include `documents`; each document contains `document_type` with its `id` and `type`.

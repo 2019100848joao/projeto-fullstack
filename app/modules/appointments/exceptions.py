@@ -26,5 +26,5 @@ class AppointmentAccessDeniedError(AppointmentError):
     pass
 
 
-class AgendaDoctorRequiredError(AppointmentError):
+class CalendarDoctorRequiredError(AppointmentError):
     pass
