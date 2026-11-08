@@ -20,8 +20,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True)
     full_name: Mapped[str] = mapped_column(String(255))
     documents: Mapped[list["UserDocument"]] = relationship(
-        cascade="all, delete-orphan",
+        cascade="save-update, merge",
         order_by=lambda: UserDocument.id,
+        passive_deletes="all",
     )
     hashed_password: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(20), default=UserRole.PATIENT.value)
@@ -45,7 +46,7 @@ class UserDocument(Base):
     )
     user_id: Mapped[str] = mapped_column(
         String(26),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("users.id", ondelete="RESTRICT"),
         index=True,
     )
     value: Mapped[str] = mapped_column(String(255))
