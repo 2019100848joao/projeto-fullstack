@@ -11,13 +11,13 @@ from app.modules.users.models import User, UserDocument
 from app.modules.users.schemas import (
     UserDocumentBatchCreate,
     UserDocumentRead,
-    UserRead,
+    UserListItem,
 )
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.get("", response_model=list[UserRead])
+@router.get("", response_model=list[UserListItem])
 def list_users(
     _: StaffUserDep,
     user_service: UserServiceDep,

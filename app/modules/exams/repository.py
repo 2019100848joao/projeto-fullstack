@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from app.modules.appointments.enums import AppointmentStatus
@@ -21,23 +21,49 @@ class ExamRepository:
         *,
         patient_id: str | None = None,
         status: ExamStatus | None = None,
-        attended_by_doctor_id: str | None = None,
     ) -> list[Exam]:
-        statement = select(Exam).order_by(Exam.created_at.desc())
+        """All exams, for attendants and admins only."""
+        return self._list(self._filtered(patient_id=patient_id, status=status))
+
+    def list_for_patient(
+        self,
+        *,
+        patient_id: str,
+        status: ExamStatus | None = None,
+    ) -> list[Exam]:
+        return self._list(self._filtered(patient_id=patient_id, status=status))
+
+    def list_for_doctor(
+        self,
+        *,
+        doctor_id: str,
+        patient_id: str | None = None,
+        status: ExamStatus | None = None,
+    ) -> list[Exam]:
+        attended_patients = select(Appointment.patient_id).where(
+            Appointment.doctor_id == doctor_id,
+            Appointment.status == AppointmentStatus.COMPLETED.value,
+        )
+        statement = self._filtered(patient_id=patient_id, status=status).where(
+            Exam.patient_id.in_(attended_patients)
+        )
+        return self._list(statement)
+
+    def _filtered(
+        self,
+        *,
+        patient_id: str | None,
+        status: ExamStatus | None,
+    ) -> Select[tuple[Exam]]:
+        statement = select(Exam)
         if patient_id is not None:
             statement = statement.where(Exam.patient_id == patient_id)
         if status is not None:
             statement = statement.where(Exam.status == status.value)
-        if attended_by_doctor_id is not None:
-            statement = statement.where(
-                Exam.patient_id.in_(
-                    select(Appointment.patient_id).where(
-                        Appointment.doctor_id == attended_by_doctor_id,
-                        Appointment.status == AppointmentStatus.COMPLETED.value,
-                    )
-                )
-            )
-        return list(self.db.scalars(statement))
+        return statement
+
+    def _list(self, statement: Select[tuple[Exam]]) -> list[Exam]:
+        return list(self.db.scalars(statement.order_by(Exam.created_at.desc())))
 
     def doctor_attended_patient(self, *, doctor_id: str, patient_id: str) -> bool:
         statement = select(Appointment.id).where(

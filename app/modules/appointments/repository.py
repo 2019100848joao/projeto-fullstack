@@ -1,9 +1,16 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.appointments.enums import AppointmentStatus
+from app.modules.appointments.exceptions import (
+    AppointmentNotScheduledError,
+    DoctorUnavailableError,
+)
 from app.modules.appointments.models import Appointment
 from app.modules.exams.models import Exam
 
@@ -77,8 +84,9 @@ class AppointmentRepository:
             created_by=created_by,
             scheduled_at=scheduled_at,
         )
-        self.db.add(appointment)
-        self.db.commit()
+        with self._doctor_slot(doctor_id=doctor_id, scheduled_at=scheduled_at):
+            self.db.add(appointment)
+            self.db.commit()
         self.db.refresh(appointment)
         return appointment
 
@@ -87,13 +95,21 @@ class AppointmentRepository:
         appointment: Appointment,
         scheduled_at: datetime,
     ) -> Appointment:
-        appointment.scheduled_at = scheduled_at
-        self.db.commit()
+        with self._doctor_slot(
+            doctor_id=appointment.doctor_id,
+            scheduled_at=scheduled_at,
+            ignore_appointment_id=appointment.id,
+        ):
+            self._update_if_scheduled(appointment, scheduled_at=scheduled_at)
+            self.db.commit()
         self.db.refresh(appointment)
         return appointment
 
     def cancel(self, appointment: Appointment) -> Appointment:
-        appointment.status = AppointmentStatus.CANCELLED.value
+        self._update_if_scheduled(
+            appointment,
+            status=AppointmentStatus.CANCELLED.value,
+        )
         self.db.commit()
         self.db.refresh(appointment)
         return appointment
@@ -106,10 +122,13 @@ class AppointmentRepository:
         consultation_info: str | None,
         exam_names: list[str],
     ) -> Appointment:
-        appointment.observations = observations
-        appointment.consultation_info = consultation_info
-        appointment.attended_at = datetime.now(UTC)
-        appointment.status = AppointmentStatus.COMPLETED.value
+        self._update_if_scheduled(
+            appointment,
+            status=AppointmentStatus.COMPLETED.value,
+            observations=observations,
+            consultation_info=consultation_info,
+            attended_at=datetime.now(UTC),
+        )
         for name in exam_names:
             self.db.add(
                 Exam(
@@ -122,3 +141,41 @@ class AppointmentRepository:
         self.db.commit()
         self.db.refresh(appointment)
         return appointment
+
+    def _update_if_scheduled(self, appointment: Appointment, **values: object) -> None:
+        # The status check runs in the UPDATE itself, so when two requests
+        # change the same appointment at once only the first one succeeds.
+        result = self.db.execute(
+            update(Appointment)
+            .where(
+                Appointment.id == appointment.id,
+                Appointment.status == AppointmentStatus.SCHEDULED.value,
+            )
+            .values(**values)
+        )
+        if result.rowcount != 1:
+            self.db.rollback()
+            raise AppointmentNotScheduledError
+
+    @contextmanager
+    def _doctor_slot(
+        self,
+        *,
+        doctor_id: str,
+        scheduled_at: datetime,
+        ignore_appointment_id: str | None = None,
+    ) -> Iterator[None]:
+        # The unique index ux_appointments_doctor_active_slot rejects a second
+        # appointment for the same doctor and time even when two requests pass
+        # the service check at the same moment.
+        try:
+            yield
+        except IntegrityError as exc:
+            self.db.rollback()
+            if self.doctor_has_conflict(
+                doctor_id=doctor_id,
+                scheduled_at=scheduled_at,
+                ignore_appointment_id=ignore_appointment_id,
+            ):
+                raise DoctorUnavailableError from exc
+            raise

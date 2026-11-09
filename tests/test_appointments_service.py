@@ -50,8 +50,11 @@ class FakeUserRepository:
     def __init__(self, *users: User) -> None:
         self.users = {user.id: user for user in users}
 
-    def get_by_id(self, user_id: str) -> User | None:
-        return self.users.get(user_id)
+    def get_active_by_role(self, user_id: str, role: UserRole) -> User | None:
+        user = self.users.get(user_id)
+        if user is None or user.role != role.value or not user.is_active:
+            return None
+        return user
 
 
 class FakeAppointmentRepository:
@@ -95,12 +98,20 @@ class FakeAppointmentRepository:
         appointment: Appointment,
         scheduled_at: datetime,
     ) -> Appointment:
+        self._ensure_scheduled(appointment)
         appointment.scheduled_at = scheduled_at
         return appointment
 
     def cancel(self, appointment: Appointment) -> Appointment:
+        self._ensure_scheduled(appointment)
         appointment.status = AppointmentStatus.CANCELLED.value
         return appointment
+
+    @staticmethod
+    def _ensure_scheduled(appointment: Appointment) -> None:
+        # The real repository does this check inside the UPDATE statement.
+        if appointment.status != AppointmentStatus.SCHEDULED.value:
+            raise AppointmentNotScheduledError
 
     def list_for_doctor_between(
         self,
@@ -121,6 +132,7 @@ class FakeAppointmentRepository:
         consultation_info: str | None,
         exam_names: list[str],
     ) -> Appointment:
+        self._ensure_scheduled(appointment)
         self.exam_names = exam_names
         appointment.observations = observations
         appointment.consultation_info = consultation_info
@@ -130,12 +142,18 @@ class FakeAppointmentRepository:
 
 def make_service(
     repository: FakeAppointmentRepository | None = None,
+    *users: User,
 ) -> AppointmentService:
     return AppointmentService(
         repository or FakeAppointmentRepository(),
         FakeUserRepository(
-            make_user("patient", UserRole.PATIENT),
-            make_user("doctor", UserRole.DOCTOR),
+            *(
+                users
+                or (
+                    make_user("patient", UserRole.PATIENT),
+                    make_user("doctor", UserRole.DOCTOR),
+                )
+            )
         ),
     )
 
@@ -172,6 +190,30 @@ def test_schedule_rejects_doctor_id_that_is_not_a_doctor() -> None:
         make_service().schedule(
             current_user=make_user("attendant", UserRole.ATTENDANT),
             appointment_create=make_create(doctor_id="patient"),
+        )
+
+
+def test_schedule_rejects_inactive_doctor() -> None:
+    inactive_doctor = make_user("doctor", UserRole.DOCTOR)
+    inactive_doctor.is_active = False
+    service = make_service(
+        None,
+        make_user("patient", UserRole.PATIENT),
+        inactive_doctor,
+    )
+
+    with pytest.raises(InvalidDoctorError):
+        service.schedule(
+            current_user=make_user("attendant", UserRole.ATTENDANT),
+            appointment_create=make_create(),
+        )
+
+
+def test_schedule_rejects_missing_patient() -> None:
+    with pytest.raises(InvalidPatientError):
+        make_service().schedule(
+            current_user=make_user("attendant", UserRole.ATTENDANT),
+            appointment_create=make_create(patient_id="missing"),
         )
 
 

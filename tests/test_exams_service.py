@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 import pytest
+from pydantic import ValidationError
 
 from app.modules.auth.enums import UserRole
 from app.modules.exams.enums import ExamStatus
@@ -10,6 +11,7 @@ from app.modules.exams.exceptions import (
     InvalidExamStatusTransitionError,
 )
 from app.modules.exams.models import Exam
+from app.modules.exams.schemas import ExamResultCreate
 from app.modules.exams.service import ExamService
 from app.modules.users.models import User
 
@@ -48,12 +50,23 @@ class FakeExamRepository:
     ) -> None:
         self.exam = exam
         self.attended = attended
+        self.list_method: str | None = None
         self.list_filters: dict[str, object] | None = None
 
     def get_by_id(self, exam_id: str) -> Exam | None:
         return self.exam
 
     def list_all(self, **filters: object) -> list[Exam]:
+        return self._record("list_all", filters)
+
+    def list_for_patient(self, **filters: object) -> list[Exam]:
+        return self._record("list_for_patient", filters)
+
+    def list_for_doctor(self, **filters: object) -> list[Exam]:
+        return self._record("list_for_doctor", filters)
+
+    def _record(self, method: str, filters: dict[str, object]) -> list[Exam]:
+        self.list_method = method
         self.list_filters = filters
         return []
 
@@ -126,6 +139,7 @@ def test_patient_only_lists_own_exams() -> None:
         patient_id="other-patient",
     )
 
+    assert repository.list_method == "list_for_patient"
     assert repository.list_filters == {"patient_id": "patient", "status": None}
 
 
@@ -136,10 +150,11 @@ def test_doctor_only_lists_exams_of_attended_patients() -> None:
         current_user=make_user("doctor", UserRole.DOCTOR),
     )
 
+    assert repository.list_method == "list_for_doctor"
     assert repository.list_filters == {
+        "doctor_id": "doctor",
         "patient_id": None,
         "status": ExamStatus.RESULT_AVAILABLE,
-        "attended_by_doctor_id": "doctor",
     }
 
 
@@ -151,6 +166,7 @@ def test_admin_lists_exams_of_any_patient() -> None:
         patient_id="patient",
     )
 
+    assert repository.list_method == "list_all"
     assert repository.list_filters == {"patient_id": "patient", "status": None}
 
 
@@ -205,3 +221,13 @@ def test_doctor_cannot_read_exam_of_patient_not_attended() -> None:
             current_user=make_user("doctor", UserRole.DOCTOR),
             exam_id="exam",
         )
+
+
+@pytest.mark.parametrize("result", ["", "   ", "\n\t"])
+def test_exam_result_rejects_blank_text(result: str) -> None:
+    with pytest.raises(ValidationError):
+        ExamResultCreate(result=result)
+
+
+def test_exam_result_is_stripped() -> None:
+    assert ExamResultCreate(result="  Normal  ").result == "Normal"

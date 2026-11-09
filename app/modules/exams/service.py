@@ -31,13 +31,19 @@ class ExamService:
             return self.repository.list_all(patient_id=patient_id, status=status)
 
         if role == UserRole.PATIENT:
-            return self.repository.list_all(patient_id=current_user.id, status=status)
+            return self.repository.list_for_patient(
+                patient_id=current_user.id,
+                status=status,
+            )
 
-        return self.repository.list_all(
-            patient_id=patient_id,
-            status=status,
-            attended_by_doctor_id=current_user.id,
-        )
+        if role == UserRole.DOCTOR:
+            return self.repository.list_for_doctor(
+                doctor_id=current_user.id,
+                patient_id=patient_id,
+                status=status,
+            )
+
+        raise ExamAccessDeniedError
 
     def list_results(
         self,

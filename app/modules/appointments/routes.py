@@ -73,12 +73,12 @@ def schedule_appointment(
     except InvalidPatientError as exc:
         raise HTTPException(
             status_code=422,
-            detail="patient_id must reference a user with the patient role",
+            detail="patient_id must reference an active user with the patient role",
         ) from exc
     except InvalidDoctorError as exc:
         raise HTTPException(
             status_code=422,
-            detail="doctor_id must reference a user with the doctor role",
+            detail="doctor_id must reference an active user with the doctor role",
         ) from exc
     except DoctorUnavailableError as exc:
         raise DOCTOR_UNAVAILABLE from exc
@@ -151,8 +151,8 @@ def read_appointment(
         raise ACCESS_DENIED from exc
 
 
-@router.patch(
-    "/{appointment_id}",
+@router.post(
+    "/{appointment_id}/reschedule",
     response_model=AppointmentRead,
     summary="Reschedule an appointment (attendant, admin)",
 )

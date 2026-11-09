@@ -9,8 +9,9 @@ os.environ["RUN_MIGRATIONS_ON_STARTUP"] = "false"
 from app.main import app
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.enums import UserRole
+from app.modules.document_types.models import DocumentType
 from app.modules.users.dependencies import get_user_service
-from app.modules.users.models import User
+from app.modules.users.models import User, UserDocument
 
 
 def make_user(role: UserRole) -> User:
@@ -81,6 +82,37 @@ def test_list_users_does_not_return_password() -> None:
 
     assert response.status_code == 200
     assert "hashed_password" not in response.json()[0]
+
+
+def test_list_users_does_not_return_documents() -> None:
+    class ServiceWithDocuments(FakeUserService):
+        def list_users(self, *, role: UserRole | None = None) -> list[User]:
+            user = make_user(UserRole.PATIENT)
+            user.documents = [
+                UserDocument(
+                    id="01K4SRY37DGE7K5YWWKNB0DOC1",
+                    user_id=user.id,
+                    type_id="01K4SRY37DGE7K5YWWKNB0TYPE",
+                    value="12345678900",
+                    document_type=DocumentType(
+                        id="01K4SRY37DGE7K5YWWKNB0TYPE",
+                        type="CPF",
+                    ),
+                )
+            ]
+            return [user]
+
+    app.dependency_overrides[get_current_user] = lambda: make_user(UserRole.ATTENDANT)
+    app.dependency_overrides[get_user_service] = ServiceWithDocuments
+
+    try:
+        response = TestClient(app).get("/users?role=patient")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert "documents" not in response.json()[0]
+    assert "12345678900" not in response.text
 
 
 def test_list_users_requires_authentication() -> None:

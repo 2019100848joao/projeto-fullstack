@@ -54,6 +54,7 @@ def request_as(
         (UserRole.DOCTOR, "POST", "/appointments", APPOINTMENT_BODY),
         (UserRole.DOCTOR, "GET", "/appointments", None),
         (UserRole.DOCTOR, "POST", "/appointments/id/cancel", None),
+        (UserRole.DOCTOR, "POST", "/appointments/id/reschedule", EXAM_SCHEDULE_BODY),
         (UserRole.ATTENDANT, "GET", "/appointments/calendar", None),
         (UserRole.PATIENT, "GET", "/appointments/calendar", None),
         (UserRole.ATTENDANT, "POST", "/appointments/id/attendance", {}),
@@ -83,3 +84,7 @@ def test_role_without_permission_is_forbidden(
 )
 def test_clinic_routes_require_authentication(method: str, path: str) -> None:
     assert request_as(None, method, path, None) == 401
+
+
+def test_reschedule_is_not_a_patch_on_the_appointment() -> None:
+    assert request_as(UserRole.ATTENDANT, "PATCH", "/appointments/id", {}) == 405

@@ -2,11 +2,10 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
-from app.modules.appointments.enums import AppointmentStatus, CalendarView
+from app.modules.appointments.enums import CalendarView
 from app.modules.appointments.exceptions import (
     AppointmentAccessDeniedError,
     AppointmentNotFoundError,
-    AppointmentNotScheduledError,
     CalendarDoctorRequiredError,
     DoctorUnavailableError,
     InvalidDoctorError,
@@ -57,12 +56,18 @@ class AppointmentService:
         current_user: User,
         appointment_create: AppointmentCreate,
     ) -> Appointment:
-        patient = self.user_repository.get_by_id(appointment_create.patient_id)
-        if patient is None or patient.role != UserRole.PATIENT.value:
+        patient = self.user_repository.get_active_by_role(
+            appointment_create.patient_id,
+            UserRole.PATIENT,
+        )
+        if patient is None:
             raise InvalidPatientError
 
-        doctor = self.user_repository.get_by_id(appointment_create.doctor_id)
-        if doctor is None or doctor.role != UserRole.DOCTOR.value:
+        doctor = self.user_repository.get_active_by_role(
+            appointment_create.doctor_id,
+            UserRole.DOCTOR,
+        )
+        if doctor is None:
             raise InvalidDoctorError
 
         if self.repository.doctor_has_conflict(
@@ -87,7 +92,7 @@ class AppointmentService:
         return self.repository.list_all(doctor_id=doctor_id, patient_id=patient_id)
 
     def reschedule(self, *, appointment_id: str, scheduled_at: datetime) -> Appointment:
-        appointment = self._get_scheduled(appointment_id)
+        appointment = self._get(appointment_id)
 
         if self.repository.doctor_has_conflict(
             doctor_id=appointment.doctor_id,
@@ -99,7 +104,7 @@ class AppointmentService:
         return self.repository.reschedule(appointment, scheduled_at)
 
     def cancel(self, *, appointment_id: str) -> Appointment:
-        return self.repository.cancel(self._get_scheduled(appointment_id))
+        return self.repository.cancel(self._get(appointment_id))
 
     def get_calendar(
         self,
@@ -130,9 +135,7 @@ class AppointmentService:
         )
 
     def get_details(self, *, current_user: User, appointment_id: str) -> Appointment:
-        appointment = self.repository.get_by_id(appointment_id)
-        if appointment is None:
-            raise AppointmentNotFoundError
+        appointment = self._get(appointment_id)
 
         if (
             current_user.role != UserRole.ADMIN.value
@@ -153,9 +156,6 @@ class AppointmentService:
             current_user=current_user,
             appointment_id=appointment_id,
         )
-        if appointment.status != AppointmentStatus.SCHEDULED.value:
-            raise AppointmentNotScheduledError
-
         return self.repository.register_attendance(
             appointment,
             observations=attendance.observations,
@@ -163,12 +163,9 @@ class AppointmentService:
             exam_names=attendance.exam_requests,
         )
 
-    def _get_scheduled(self, appointment_id: str) -> Appointment:
+    def _get(self, appointment_id: str) -> Appointment:
         appointment = self.repository.get_by_id(appointment_id)
         if appointment is None:
             raise AppointmentNotFoundError
-
-        if appointment.status != AppointmentStatus.SCHEDULED.value:
-            raise AppointmentNotScheduledError
 
         return appointment

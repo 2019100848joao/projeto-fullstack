@@ -1,7 +1,7 @@
 from datetime import datetime
 
 import ulid
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -9,9 +9,21 @@ from app.modules.appointments.enums import AppointmentStatus
 from app.modules.exams.models import Exam
 from app.modules.users.models import User
 
+ACTIVE_SLOT = text(f"status <> '{AppointmentStatus.CANCELLED.value}'")
+
 
 class Appointment(Base):
     __tablename__ = "appointments"
+    __table_args__ = (
+        Index(
+            "ux_appointments_doctor_active_slot",
+            "doctor_id",
+            "scheduled_at",
+            unique=True,
+            postgresql_where=ACTIVE_SLOT,
+            sqlite_where=ACTIVE_SLOT,
+        ),
+    )
 
     id: Mapped[str] = mapped_column(
         String(26),

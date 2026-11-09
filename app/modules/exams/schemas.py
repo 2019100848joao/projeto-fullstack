@@ -1,9 +1,15 @@
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, StringConstraints
 
 from app.modules.appointments.schemas import UserSummary
 from app.modules.exams.enums import ExamStatus
+
+ExamResultText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=20000),
+]
 
 
 class ExamSchedule(BaseModel):
@@ -11,7 +17,7 @@ class ExamSchedule(BaseModel):
 
 
 class ExamResultCreate(BaseModel):
-    result: str = Field(min_length=1, max_length=20000)
+    result: ExamResultText
 
 
 class ExamRead(BaseModel):
@@ -23,8 +29,11 @@ class ExamRead(BaseModel):
     doctor: UserSummary
     scheduled_at: datetime | None
     performed_at: datetime | None
-    result: str | None
     result_available_at: datetime | None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ExamResultRead(ExamRead):
+    result: str

@@ -15,7 +15,12 @@ from app.modules.exams.exceptions import (
     InvalidExamStatusTransitionError,
 )
 from app.modules.exams.models import Exam
-from app.modules.exams.schemas import ExamRead, ExamResultCreate, ExamSchedule
+from app.modules.exams.schemas import (
+    ExamRead,
+    ExamResultCreate,
+    ExamResultRead,
+    ExamSchedule,
+)
 from app.modules.exams.service import ExamService
 
 router = APIRouter(prefix="/exams", tags=["exams"])
@@ -47,16 +52,19 @@ def list_exams(
     exam_status: Annotated[ExamStatus | None, Query(alias="status")] = None,
     patient_id: str | None = None,
 ) -> list[Exam]:
-    return service.list_exams(
-        current_user=current_user,
-        status=exam_status,
-        patient_id=patient_id,
-    )
+    try:
+        return service.list_exams(
+            current_user=current_user,
+            status=exam_status,
+            patient_id=patient_id,
+        )
+    except ExamAccessDeniedError as exc:
+        raise ACCESS_DENIED from exc
 
 
 @router.get(
     "/results",
-    response_model=list[ExamRead],
+    response_model=list[ExamResultRead],
     summary="List available exam results (patient, doctor, admin)",
 )
 def list_results(
@@ -64,7 +72,10 @@ def list_results(
     service: ExamServiceDep,
     patient_id: str | None = None,
 ) -> list[Exam]:
-    return service.list_results(current_user=current_user, patient_id=patient_id)
+    try:
+        return service.list_results(current_user=current_user, patient_id=patient_id)
+    except ExamAccessDeniedError as exc:
+        raise ACCESS_DENIED from exc
 
 
 @router.get(

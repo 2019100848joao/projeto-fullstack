@@ -16,5 +16,9 @@ CREATE TABLE appointments (
 CREATE INDEX ix_appointments_doctor_scheduled_at
 ON appointments (doctor_id, scheduled_at);
 
+CREATE UNIQUE INDEX ux_appointments_doctor_active_slot
+ON appointments (doctor_id, scheduled_at)
+WHERE status <> 'cancelled';
+
 CREATE INDEX ix_appointments_patient_id
 ON appointments (patient_id);
