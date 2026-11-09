@@ -19,6 +19,20 @@ class UserRepository:
         statement = select(User).where(User.email == email)
         return self.db.scalar(statement)
 
+    def get_active_by_role(self, user_id: str, role: UserRole) -> User | None:
+        statement = select(User).where(
+            User.id == user_id,
+            User.role == role.value,
+            User.is_active.is_(True),
+        )
+        return self.db.scalar(statement)
+
+    def list_all(self, *, role: UserRole | None = None) -> list[User]:
+        statement = select(User).order_by(User.full_name, User.id)
+        if role is not None:
+            statement = statement.where(User.role == role.value)
+        return list(self.db.scalars(statement))
+
     def save(self, user: User) -> User:
         self.db.commit()
         self.db.refresh(user)

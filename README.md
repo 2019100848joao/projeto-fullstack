@@ -64,10 +64,19 @@ python -c "from app.core.migrations import run_migrations; run_migrations()"
 - `POST /auth/register` creates a user account.
 - `POST /auth/login` returns a JWT access token from an `email` and `password` JSON body.
 - `GET /auth/me` returns the authenticated user.
+- `GET /users?role=patient|doctor|attendant|admin` lists users for `admin`, `doctor` and `attendant`, without their documents.
 - `POST /users/me/documents` accepts a nonempty array of documents for the authenticated user (one per type) and returns the created documents. The same value can be used by different users.
 - `GET /document-types` lists available document types without authentication.
 - `POST /document-types` creates a document type for administrators.
 - `PATCH /auth/{user_id}/role` changes a user role when the authenticated user has permission.
+- `POST /appointments`, `GET /appointments`, `POST /appointments/{id}/reschedule` and `POST /appointments/{id}/cancel` let an attendant schedule, list, reschedule and cancel appointments. Patient and doctor must be active users with those roles, and the database rejects two active appointments for the same doctor at the same time.
+- `GET /appointments/calendar?view=day|week|month&date=YYYY-MM-DD` returns the authenticated doctor calendar.
+- `POST /appointments/{id}/attendance` lets the appointment doctor register the attendance and request exams.
+- `GET /appointments/{id}` returns the appointment with its attendance record to its doctor.
+- `GET /exams` and `GET /exams/{id}` return the exams visible to the authenticated user, without the result text.
+- `GET /exams/results` returns available exam results to patients and doctors. It is the only route that returns the result text.
+- `admin` users can call every appointment and exam endpoint; on the calendar they must pass `doctor_id`.
+- `POST /exams/{id}/schedule`, `POST /exams/{id}/perform` and `POST /exams/{id}/result` let an attendant move an exam through its statuses.
 
 User responses include `documents`; each document contains `document_type` with its `id` and `type`.
 Register the account, log in, then add documents through `/users/me/documents`.
