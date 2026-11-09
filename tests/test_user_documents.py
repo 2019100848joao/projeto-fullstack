@@ -1,9 +1,11 @@
 import os
+import sqlite3
 from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy import create_engine, event, inspect, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 os.environ["RUN_MIGRATIONS_ON_STARTUP"] = "false"
@@ -221,9 +223,48 @@ def test_user_documents_table_schema_constraints() -> None:
     assert user_id_col.index is True
     assert type_id_col.index is True
     assert any(fk.target_fullname == "users.id" for fk in user_id_col.foreign_keys)
+    assert next(iter(user_id_col.foreign_keys)).ondelete == "RESTRICT"
     assert any(
         fk.target_fullname == "document_type.id" for fk in type_id_col.foreign_keys
     )
+
+
+def test_user_with_documents_cannot_be_deleted() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(connection: sqlite3.Connection, record: object) -> None:
+        connection.execute("PRAGMA foreign_keys=ON")
+
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        user = User(
+            email="patient@example.com",
+            full_name="Patient Example",
+            hashed_password="hashed-password",
+        )
+        doc_type = DocumentType(type="CPF")
+        db.add_all((user, doc_type))
+        db.commit()
+        user_id = user.id
+        document = UserDocument(
+            user_id=user_id, type_id=doc_type.id, value="12345678900"
+        )
+        db.add(document)
+        db.commit()
+
+        assert user.documents == [document]
+        db.delete(user)
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
+
+        assert db.get(User, user_id) is not None
+        assert (
+            db.scalar(select(UserDocument).where(UserDocument.user_id == user_id))
+            is not None
+        )
 
 
 def test_create_document_type_endpoint() -> None:
