@@ -50,6 +50,10 @@ class UserSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AttendedPatientRead(UserSummary):
+    last_appointment_at: datetime
+
+
 class ExamSummary(BaseModel):
     id: str
     name: str

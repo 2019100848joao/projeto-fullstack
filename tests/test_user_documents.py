@@ -294,6 +294,7 @@ def test_user_document_route_is_separate_from_auth_routes() -> None:
         "/auth/register",
         "/auth/login",
         "/auth/me",
+        "/auth/refresh",
         "/auth/{user_id}/role",
     }
     assert paths["/users/me/documents"]["post"]["tags"] == ["users"]

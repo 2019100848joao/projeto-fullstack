@@ -48,6 +48,13 @@ def login(user_login: UserLogin, auth_service: AuthServiceDep) -> Token:
         ) from exc
 
 
+@router.post("/refresh", response_model=Token)
+def refresh_token(current_user: CurrentUserDep, auth_service: AuthServiceDep) -> Token:
+    # get_current_user already rejects expired tokens and inactive users, so an
+    # expired session cannot be extended: the user has to log in again.
+    return auth_service.issue_token(current_user)
+
+
 @router.get("/me", response_model=UserRead)
 def read_current_user(current_user: CurrentUserDep) -> User:
     return current_user
