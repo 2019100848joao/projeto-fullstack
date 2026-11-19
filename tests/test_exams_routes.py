@@ -72,19 +72,20 @@ def request_as(role: UserRole, method: str, path: str, body: object = None):
 
 
 @pytest.mark.parametrize(
-    ("method", "path", "body"),
+    ("role", "method", "path", "body"),
     [
-        ("GET", "/exams", None),
-        ("GET", "/exams/exam", None),
-        ("POST", "/exams/exam/result", {"result": "Confidential result"}),
+        (UserRole.ATTENDANT, "GET", "/exams", None),
+        (UserRole.ATTENDANT, "GET", "/exams/exam", None),
+        (UserRole.DOCTOR, "POST", "/exams/exam/result", {"result": "Confidential"}),
     ],
 )
 def test_exam_routes_do_not_return_the_result(
+    role: UserRole,
     method: str,
     path: str,
     body: object,
 ) -> None:
-    response = request_as(UserRole.ATTENDANT, method, path, body)
+    response = request_as(role, method, path, body)
 
     payload = response.json()
     exam = payload[0] if isinstance(payload, list) else payload
@@ -105,7 +106,7 @@ def test_results_route_returns_the_result(role: UserRole) -> None:
 
 def test_blank_result_is_rejected() -> None:
     response = request_as(
-        UserRole.ATTENDANT,
+        UserRole.DOCTOR,
         "POST",
         "/exams/exam/result",
         {"result": "  "},

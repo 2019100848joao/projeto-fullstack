@@ -17,6 +17,7 @@ from app.modules.appointments.repository import AppointmentRepository
 from app.modules.appointments.schemas import (
     AppointmentCreate,
     AttendanceCreate,
+    AttendedPatientRead,
     CalendarRead,
 )
 from app.modules.auth.enums import UserRole
@@ -92,6 +93,27 @@ class AppointmentService:
     ) -> list[Appointment]:
         return self.repository.list_all(doctor_id=doctor_id, patient_id=patient_id)
 
+    def list_for_patient(self, *, current_user: User) -> list[Appointment]:
+        # The patient comes from the session only, so nobody can list another patient.
+        return self.repository.list_all(patient_id=current_user.id)
+
+    def list_attended_patients(
+        self, *, current_user: User
+    ) -> list[AttendedPatientRead]:
+        # The doctor comes from the session only, so nobody can list the
+        # patients of another doctor.
+        return [
+            AttendedPatientRead(
+                id=patient.id,
+                full_name=patient.full_name,
+                email=patient.email,
+                last_appointment_at=last_attended_at,
+            )
+            for patient, last_attended_at in self.repository.list_patients_attended_by(
+                current_user.id
+            )
+        ]
+
     def reschedule(self, *, appointment_id: str, scheduled_at: datetime) -> Appointment:
         appointment = self._get(appointment_id)
 
@@ -106,6 +128,21 @@ class AppointmentService:
 
     def cancel(self, *, appointment_id: str) -> Appointment:
         return self.repository.cancel(self._get(appointment_id))
+
+    def mark_no_show(self, *, current_user: User, appointment_id: str) -> Appointment:
+        appointment = self._get(appointment_id)
+
+        # Doctors only mark their own appointments; attendants and admins any.
+        if (
+            current_user.role == UserRole.DOCTOR.value
+            and appointment.doctor_id != current_user.id
+        ):
+            raise AppointmentAccessDeniedError
+
+        if appointment.scheduled_at > datetime.now(UTC):
+            raise AppointmentNotStartedError
+
+        return self.repository.mark_no_show(appointment)
 
     def get_calendar(
         self,

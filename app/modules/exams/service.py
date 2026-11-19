@@ -74,8 +74,13 @@ class ExamService:
     def mark_performed(self, *, exam_id: str) -> Exam:
         return self.repository.mark_performed(self._get(exam_id))
 
-    def register_result(self, *, exam_id: str, result: str) -> Exam:
-        return self.repository.register_result(self._get(exam_id), result)
+    def register_result(self, *, current_user: User, exam_id: str, result: str) -> Exam:
+        # Only the doctor who requested the exam closes it with the result.
+        exam = self._get(exam_id)
+        if exam.doctor_id != current_user.id:
+            raise ExamAccessDeniedError
+
+        return self.repository.register_result(exam, result)
 
     def _get(self, exam_id: str) -> Exam:
         exam = self.repository.get_by_id(exam_id)

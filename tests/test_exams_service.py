@@ -96,7 +96,11 @@ def test_exam_goes_through_all_statuses() -> None:
     )
     assert service.mark_performed(exam_id="exam").status == "performed"
 
-    exam = service.register_result(exam_id="exam", result="Normal")
+    exam = service.register_result(
+        current_user=make_user("doctor", UserRole.DOCTOR),
+        exam_id="exam",
+        result="Normal",
+    )
 
     assert exam.status == "result_available"
     assert exam.result == "Normal"
@@ -113,7 +117,25 @@ def test_result_rejects_exam_that_is_not_performed() -> None:
     service = ExamService(FakeExamRepository(make_exam(ExamStatus.SCHEDULED)))
 
     with pytest.raises(InvalidExamStatusTransitionError):
-        service.register_result(exam_id="exam", result="Normal")
+        service.register_result(
+            current_user=make_user("doctor", UserRole.DOCTOR),
+            exam_id="exam",
+            result="Normal",
+        )
+
+
+def test_result_rejects_doctor_who_did_not_request_the_exam() -> None:
+    exam = make_exam(ExamStatus.PERFORMED)
+    service = ExamService(FakeExamRepository(exam))
+
+    with pytest.raises(ExamAccessDeniedError):
+        service.register_result(
+            current_user=make_user("other-doctor", UserRole.DOCTOR),
+            exam_id="exam",
+            result="Normal",
+        )
+
+    assert exam.status == ExamStatus.PERFORMED.value
 
 
 def test_schedule_rejects_performed_exam() -> None:

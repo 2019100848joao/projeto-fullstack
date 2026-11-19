@@ -12,6 +12,7 @@ from app.modules.appointments.exceptions import (
 from app.modules.appointments.models import Appointment
 from app.modules.appointments.repository import AppointmentRepository
 from app.modules.exams.models import Exam
+from app.modules.users.models import User
 
 SCHEDULED_AT = datetime(2026, 10, 14, 13, 0, tzinfo=UTC)
 
@@ -116,6 +117,97 @@ def test_completed_appointment_cannot_be_cancelled_by_a_stale_request(
 
         with pytest.raises(AppointmentNotScheduledError):
             AppointmentRepository(second).cancel(stale)
+
+    with Session(engine) as db:
+        status = db.get(Appointment, appointment_id).status
+        assert status == AppointmentStatus.COMPLETED.value
+
+
+def test_attended_patients_lists_each_completed_patient_once_with_last_attendance(
+    engine: Engine,
+) -> None:
+    first_visit = datetime(2026, 9, 1, 13, 0, tzinfo=UTC)
+    last_visit = datetime(2026, 10, 1, 13, 0, tzinfo=UTC)
+    with Session(engine) as db:
+        db.add(
+            User(
+                id="other-patient",
+                email="other-patient@example.com",
+                full_name="other-patient",
+                hashed_password="hashed",
+                role="patient",
+            )
+        )
+        completed = AppointmentStatus.COMPLETED.value
+        db.add_all(
+            [
+                # Two attendances of the same patient: listed once, with the last one.
+                Appointment(
+                    patient_id="patient",
+                    doctor_id="doctor",
+                    created_by="attendant",
+                    scheduled_at=first_visit,
+                    status=completed,
+                    attended_at=first_visit,
+                ),
+                Appointment(
+                    patient_id="patient",
+                    doctor_id="doctor",
+                    created_by="attendant",
+                    scheduled_at=last_visit,
+                    status=completed,
+                    attended_at=last_visit,
+                ),
+                # Not attended yet, or attended by another doctor: not listed.
+                Appointment(
+                    patient_id="other-patient",
+                    doctor_id="doctor",
+                    created_by="attendant",
+                    scheduled_at=SCHEDULED_AT,
+                ),
+                Appointment(
+                    patient_id="other-patient",
+                    doctor_id="doctor",
+                    created_by="attendant",
+                    scheduled_at=first_visit,
+                    status=AppointmentStatus.CANCELLED.value,
+                ),
+                Appointment(
+                    patient_id="other-patient",
+                    doctor_id="other-doctor",
+                    created_by="attendant",
+                    scheduled_at=last_visit,
+                    status=completed,
+                    attended_at=last_visit,
+                ),
+            ]
+        )
+        db.commit()
+
+        patients = AppointmentRepository(db).list_patients_attended_by("doctor")
+
+        assert [
+            (user.id, attended_at.replace(tzinfo=UTC)) for user, attended_at in patients
+        ] == [("patient", last_visit)]
+
+
+def test_completed_appointment_cannot_be_marked_as_no_show_by_a_stale_request(
+    engine: Engine,
+) -> None:
+    with Session(engine) as db:
+        appointment_id = create_appointment(db).id
+
+    with Session(engine) as first, Session(engine) as second:
+        stale = second.get(Appointment, appointment_id)
+        AppointmentRepository(first).register_attendance(
+            first.get(Appointment, appointment_id),
+            observations=None,
+            consultation_info=None,
+            exam_names=[],
+        )
+
+        with pytest.raises(AppointmentNotScheduledError):
+            AppointmentRepository(second).mark_no_show(stale)
 
     with Session(engine) as db:
         status = db.get(Appointment, appointment_id).status
