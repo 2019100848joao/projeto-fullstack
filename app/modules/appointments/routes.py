@@ -13,6 +13,7 @@ from app.modules.appointments.exceptions import (
     AppointmentAccessDeniedError,
     AppointmentNotFoundError,
     AppointmentNotScheduledError,
+    AppointmentNotStartedError,
     CalendarDoctorRequiredError,
     DoctorUnavailableError,
     InvalidDoctorError,
@@ -217,3 +218,8 @@ def register_attendance(
         raise ACCESS_DENIED from exc
     except AppointmentNotScheduledError as exc:
         raise NOT_SCHEDULED from exc
+    except AppointmentNotStartedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Appointment time has not been reached yet",
+        ) from exc

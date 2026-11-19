@@ -1,12 +1,9 @@
-from collections.abc import Iterator
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine, create_engine, func, select
+from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
-from app.core.database import Base
 from app.modules.appointments.enums import AppointmentStatus
 from app.modules.appointments.exceptions import (
     AppointmentNotScheduledError,
@@ -14,37 +11,9 @@ from app.modules.appointments.exceptions import (
 )
 from app.modules.appointments.models import Appointment
 from app.modules.appointments.repository import AppointmentRepository
-from app.modules.auth.enums import UserRole
 from app.modules.exams.models import Exam
-from app.modules.users.models import User
 
 SCHEDULED_AT = datetime(2026, 10, 14, 13, 0, tzinfo=UTC)
-
-
-@pytest.fixture
-def engine(tmp_path: Path) -> Iterator[Engine]:
-    # A file database, so two sessions have separate connections, as two
-    # concurrent requests would.
-    engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'clinic.db'}")
-    Base.metadata.create_all(engine)
-    with Session(engine) as db:
-        db.add_all(
-            User(
-                id=user_id,
-                email=f"{user_id}@example.com",
-                full_name=user_id,
-                hashed_password="hashed",
-                role=role.value,
-            )
-            for user_id, role in (
-                ("patient", UserRole.PATIENT),
-                ("doctor", UserRole.DOCTOR),
-                ("attendant", UserRole.ATTENDANT),
-            )
-        )
-        db.commit()
-    yield engine
-    engine.dispose()
 
 
 def create_appointment(db: Session) -> Appointment:

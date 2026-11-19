@@ -2,11 +2,7 @@ from datetime import datetime
 
 from app.modules.auth.enums import UserRole
 from app.modules.exams.enums import ExamStatus
-from app.modules.exams.exceptions import (
-    ExamAccessDeniedError,
-    ExamNotFoundError,
-    InvalidExamStatusTransitionError,
-)
+from app.modules.exams.exceptions import ExamAccessDeniedError, ExamNotFoundError
 from app.modules.exams.models import Exam
 from app.modules.exams.repository import ExamRepository
 from app.modules.users.models import User
@@ -67,37 +63,19 @@ class ExamService:
         if role == UserRole.PATIENT and exam.patient_id == current_user.id:
             return exam
 
-        if role == UserRole.DOCTOR and self.repository.doctor_attended_patient(
-            doctor_id=current_user.id,
-            patient_id=exam.patient_id,
-        ):
+        if role == UserRole.DOCTOR and exam.doctor_id == current_user.id:
             return exam
 
         raise ExamAccessDeniedError
 
     def schedule(self, *, exam_id: str, scheduled_at: datetime) -> Exam:
-        exam = self._get(exam_id)
-        if exam.status not in {
-            ExamStatus.REQUESTED.value,
-            ExamStatus.SCHEDULED.value,
-        }:
-            raise InvalidExamStatusTransitionError
-
-        return self.repository.schedule(exam, scheduled_at)
+        return self.repository.schedule(self._get(exam_id), scheduled_at)
 
     def mark_performed(self, *, exam_id: str) -> Exam:
-        exam = self._get(exam_id)
-        if exam.status != ExamStatus.SCHEDULED.value:
-            raise InvalidExamStatusTransitionError
-
-        return self.repository.mark_performed(exam)
+        return self.repository.mark_performed(self._get(exam_id))
 
     def register_result(self, *, exam_id: str, result: str) -> Exam:
-        exam = self._get(exam_id)
-        if exam.status != ExamStatus.PERFORMED.value:
-            raise InvalidExamStatusTransitionError
-
-        return self.repository.register_result(exam, result)
+        return self.repository.register_result(self._get(exam_id), result)
 
     def _get(self, exam_id: str) -> Exam:
         exam = self.repository.get_by_id(exam_id)

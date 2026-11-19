@@ -1,9 +1,9 @@
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, StringConstraints
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
-from app.modules.appointments.schemas import UserSummary
+from app.modules.appointments.schemas import FutureDatetime, UserSummary
 from app.modules.exams.enums import ExamStatus
 
 ExamResultText = Annotated[
@@ -13,7 +13,7 @@ ExamResultText = Annotated[
 
 
 class ExamSchedule(BaseModel):
-    scheduled_at: AwareDatetime
+    scheduled_at: FutureDatetime
 
 
 class ExamResultCreate(BaseModel):

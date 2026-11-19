@@ -1,11 +1,10 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, select, update
 from sqlalchemy.orm import Session
 
-from app.modules.appointments.enums import AppointmentStatus
-from app.modules.appointments.models import Appointment
 from app.modules.exams.enums import ExamStatus
+from app.modules.exams.exceptions import InvalidExamStatusTransitionError
 from app.modules.exams.models import Exam
 
 
@@ -40,12 +39,9 @@ class ExamRepository:
         patient_id: str | None = None,
         status: ExamStatus | None = None,
     ) -> list[Exam]:
-        attended_patients = select(Appointment.patient_id).where(
-            Appointment.doctor_id == doctor_id,
-            Appointment.status == AppointmentStatus.COMPLETED.value,
-        )
+        """Only the exams the doctor requested."""
         statement = self._filtered(patient_id=patient_id, status=status).where(
-            Exam.patient_id.in_(attended_patients)
+            Exam.doctor_id == doctor_id
         )
         return self._list(statement)
 
@@ -65,31 +61,52 @@ class ExamRepository:
     def _list(self, statement: Select[tuple[Exam]]) -> list[Exam]:
         return list(self.db.scalars(statement.order_by(Exam.created_at.desc())))
 
-    def doctor_attended_patient(self, *, doctor_id: str, patient_id: str) -> bool:
-        statement = select(Appointment.id).where(
-            Appointment.doctor_id == doctor_id,
-            Appointment.patient_id == patient_id,
-            Appointment.status == AppointmentStatus.COMPLETED.value,
-        )
-        return self.db.scalar(statement.limit(1)) is not None
-
     def schedule(self, exam: Exam, scheduled_at: datetime) -> Exam:
-        exam.scheduled_at = scheduled_at
-        exam.status = ExamStatus.SCHEDULED.value
-        return self._save(exam)
+        return self._transition(
+            exam,
+            from_statuses=(ExamStatus.REQUESTED, ExamStatus.SCHEDULED),
+            status=ExamStatus.SCHEDULED.value,
+            scheduled_at=scheduled_at,
+        )
 
     def mark_performed(self, exam: Exam) -> Exam:
-        exam.performed_at = datetime.now(UTC)
-        exam.status = ExamStatus.PERFORMED.value
-        return self._save(exam)
+        return self._transition(
+            exam,
+            from_statuses=(ExamStatus.SCHEDULED,),
+            status=ExamStatus.PERFORMED.value,
+            performed_at=datetime.now(UTC),
+        )
 
     def register_result(self, exam: Exam, result: str) -> Exam:
-        exam.result = result
-        exam.result_available_at = datetime.now(UTC)
-        exam.status = ExamStatus.RESULT_AVAILABLE.value
-        return self._save(exam)
+        return self._transition(
+            exam,
+            from_statuses=(ExamStatus.PERFORMED,),
+            status=ExamStatus.RESULT_AVAILABLE.value,
+            result=result,
+            result_available_at=datetime.now(UTC),
+        )
 
-    def _save(self, exam: Exam) -> Exam:
+    def _transition(
+        self,
+        exam: Exam,
+        *,
+        from_statuses: tuple[ExamStatus, ...],
+        **values: object,
+    ) -> Exam:
+        # The status check runs in the UPDATE itself, so when two requests
+        # move the same exam at once only the first one succeeds.
+        result = self.db.execute(
+            update(Exam)
+            .where(
+                Exam.id == exam.id,
+                Exam.status.in_([status.value for status in from_statuses]),
+            )
+            .values(**values)
+        )
+        if result.rowcount != 1:
+            self.db.rollback()
+            raise InvalidExamStatusTransitionError
+
         self.db.commit()
         self.db.refresh(exam)
         return exam

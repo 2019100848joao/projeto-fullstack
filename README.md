@@ -69,11 +69,11 @@ python -c "from app.core.migrations import run_migrations; run_migrations()"
 - `GET /document-types` lists available document types without authentication.
 - `POST /document-types` creates a document type for administrators.
 - `PATCH /auth/{user_id}/role` changes a user role when the authenticated user has permission.
-- `POST /appointments`, `GET /appointments`, `POST /appointments/{id}/reschedule` and `POST /appointments/{id}/cancel` let an attendant schedule, list, reschedule and cancel appointments. Patient and doctor must be active users with those roles, and the database rejects two active appointments for the same doctor at the same time.
+- `POST /appointments`, `GET /appointments`, `POST /appointments/{id}/reschedule` and `POST /appointments/{id}/cancel` let an attendant schedule, list, reschedule and cancel appointments. Patient and doctor must be active users with those roles, and the database rejects two active appointments for the same doctor at the same time. Appointments start on a 30-minute grid (`:00` or `:30`) and must be in the future.
 - `GET /appointments/calendar?view=day|week|month&date=YYYY-MM-DD` returns the authenticated doctor calendar.
-- `POST /appointments/{id}/attendance` lets the appointment doctor register the attendance and request exams.
+- `POST /appointments/{id}/attendance` lets the appointment doctor register the attendance and request exams, once the appointment time has been reached.
 - `GET /appointments/{id}` returns the appointment with its attendance record to its doctor.
-- `GET /exams` and `GET /exams/{id}` return the exams visible to the authenticated user, without the result text.
+- `GET /exams` and `GET /exams/{id}` return the exams visible to the authenticated user, without the result text: patients see their own exams, doctors see the exams they requested, attendants and admins see all of them.
 - `GET /exams/results` returns available exam results to patients and doctors. It is the only route that returns the result text.
 - `admin` users can call every appointment and exam endpoint; on the calendar they must pass `doctor_id`.
 - `POST /exams/{id}/schedule`, `POST /exams/{id}/perform` and `POST /exams/{id}/result` let an attendant move an exam through its statuses.

@@ -14,9 +14,9 @@ from app.modules.users.models import User
 APPOINTMENT_BODY = {
     "patient_id": "patient",
     "doctor_id": "doctor",
-    "scheduled_at": "2026-10-14T10:00:00-03:00",
+    "scheduled_at": "2099-10-14T10:00:00-03:00",
 }
-EXAM_SCHEDULE_BODY = {"scheduled_at": "2026-10-16T08:00:00-03:00"}
+EXAM_SCHEDULE_BODY = {"scheduled_at": "2099-10-16T08:00:00-03:00"}
 
 
 def request_as(
