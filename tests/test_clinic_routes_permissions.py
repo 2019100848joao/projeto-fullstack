@@ -14,9 +14,9 @@ from app.modules.users.models import User
 APPOINTMENT_BODY = {
     "patient_id": "patient",
     "doctor_id": "doctor",
-    "scheduled_at": "2026-10-14T10:00:00-03:00",
+    "scheduled_at": "2099-10-14T10:00:00-03:00",
 }
-EXAM_SCHEDULE_BODY = {"scheduled_at": "2026-10-16T08:00:00-03:00"}
+EXAM_SCHEDULE_BODY = {"scheduled_at": "2099-10-16T08:00:00-03:00"}
 
 
 def request_as(
@@ -53,6 +53,13 @@ def request_as(
         (UserRole.PATIENT, "POST", "/appointments", APPOINTMENT_BODY),
         (UserRole.DOCTOR, "POST", "/appointments", APPOINTMENT_BODY),
         (UserRole.DOCTOR, "GET", "/appointments", None),
+        (UserRole.DOCTOR, "GET", "/appointments/me", None),
+        (UserRole.ATTENDANT, "GET", "/appointments/me", None),
+        (UserRole.ADMIN, "GET", "/appointments/me", None),
+        (UserRole.PATIENT, "GET", "/appointments/patients", None),
+        (UserRole.PATIENT, "POST", "/appointments/id/no-show", None),
+        (UserRole.ATTENDANT, "GET", "/appointments/patients", None),
+        (UserRole.ADMIN, "GET", "/appointments/patients", None),
         (UserRole.DOCTOR, "POST", "/appointments/id/cancel", None),
         (UserRole.DOCTOR, "POST", "/appointments/id/reschedule", EXAM_SCHEDULE_BODY),
         (UserRole.ATTENDANT, "GET", "/appointments/calendar", None),
@@ -62,7 +69,9 @@ def request_as(
         (UserRole.ATTENDANT, "GET", "/exams/results", None),
         (UserRole.DOCTOR, "POST", "/exams/id/schedule", EXAM_SCHEDULE_BODY),
         (UserRole.PATIENT, "POST", "/exams/id/perform", None),
-        (UserRole.DOCTOR, "POST", "/exams/id/result", {"result": "Normal"}),
+        (UserRole.ATTENDANT, "POST", "/exams/id/result", {"result": "Normal"}),
+        (UserRole.ADMIN, "POST", "/exams/id/result", {"result": "Normal"}),
+        (UserRole.PATIENT, "POST", "/exams/id/result", {"result": "Normal"}),
     ],
 )
 def test_role_without_permission_is_forbidden(
@@ -78,6 +87,10 @@ def test_role_without_permission_is_forbidden(
     ("method", "path"),
     [
         ("GET", "/appointments/calendar"),
+        ("GET", "/appointments/me"),
+        ("GET", "/appointments/patients"),
+        ("POST", "/appointments/id/no-show"),
+        ("POST", "/auth/refresh"),
         ("GET", "/exams"),
         ("GET", "/exams/results"),
     ],

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.modules.appointments.dependencies import (
     DoctorOrAdminUserDep,
+    NoShowUserDep,
     SchedulerUserDep,
     get_appointment_service,
 )
@@ -13,6 +14,7 @@ from app.modules.appointments.exceptions import (
     AppointmentAccessDeniedError,
     AppointmentNotFoundError,
     AppointmentNotScheduledError,
+    AppointmentNotStartedError,
     CalendarDoctorRequiredError,
     DoctorUnavailableError,
     InvalidDoctorError,
@@ -25,9 +27,11 @@ from app.modules.appointments.schemas import (
     AppointmentRead,
     AppointmentReschedule,
     AttendanceCreate,
+    AttendedPatientRead,
     CalendarRead,
 )
 from app.modules.appointments.service import AppointmentService
+from app.modules.auth.dependencies import DoctorUserDep, PatientUserDep
 
 router = APIRouter(prefix="/appointments", tags=["appointments"])
 
@@ -47,6 +51,10 @@ NOT_SCHEDULED = HTTPException(
 DOCTOR_UNAVAILABLE = HTTPException(
     status_code=status.HTTP_409_CONFLICT,
     detail="Doctor already has an appointment at this time",
+)
+NOT_STARTED = HTTPException(
+    status_code=status.HTTP_409_CONFLICT,
+    detail="Appointment time has not been reached yet",
 )
 ACCESS_DENIED = HTTPException(
     status_code=status.HTTP_403_FORBIDDEN,
@@ -96,6 +104,30 @@ def list_appointments(
     patient_id: str | None = None,
 ) -> list[Appointment]:
     return service.list_appointments(doctor_id=doctor_id, patient_id=patient_id)
+
+
+@router.get(
+    "/me",
+    response_model=list[AppointmentRead],
+    summary="List the authenticated patient's own appointments (patient)",
+)
+def list_my_appointments(
+    current_user: PatientUserDep,
+    service: AppointmentServiceDep,
+) -> list[Appointment]:
+    return service.list_for_patient(current_user=current_user)
+
+
+@router.get(
+    "/patients",
+    response_model=list[AttendedPatientRead],
+    summary="Patients the authenticated doctor has attended (doctor)",
+)
+def list_attended_patients(
+    current_user: DoctorUserDep,
+    service: AppointmentServiceDep,
+) -> list[AttendedPatientRead]:
+    return service.list_attended_patients(current_user=current_user)
 
 
 @router.get(
@@ -194,6 +226,31 @@ def cancel_appointment(
 
 
 @router.post(
+    "/{appointment_id}/no-show",
+    response_model=AppointmentRead,
+    summary="Mark a past appointment as a no-show (attendant, admin, its doctor)",
+)
+def mark_no_show(
+    appointment_id: str,
+    current_user: NoShowUserDep,
+    service: AppointmentServiceDep,
+) -> Appointment:
+    try:
+        return service.mark_no_show(
+            current_user=current_user,
+            appointment_id=appointment_id,
+        )
+    except AppointmentNotFoundError as exc:
+        raise NOT_FOUND from exc
+    except AppointmentAccessDeniedError as exc:
+        raise ACCESS_DENIED from exc
+    except AppointmentNotScheduledError as exc:
+        raise NOT_SCHEDULED from exc
+    except AppointmentNotStartedError as exc:
+        raise NOT_STARTED from exc
+
+
+@router.post(
     "/{appointment_id}/attendance",
     response_model=AppointmentDetailRead,
     status_code=status.HTTP_201_CREATED,
@@ -217,3 +274,5 @@ def register_attendance(
         raise ACCESS_DENIED from exc
     except AppointmentNotScheduledError as exc:
         raise NOT_SCHEDULED from exc
+    except AppointmentNotStartedError as exc:
+        raise NOT_STARTED from exc

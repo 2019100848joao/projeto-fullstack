@@ -2,7 +2,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,7 @@ from app.modules.appointments.exceptions import (
 )
 from app.modules.appointments.models import Appointment
 from app.modules.exams.models import Exam
+from app.modules.users.models import User
 
 
 class AppointmentRepository:
@@ -53,6 +54,21 @@ class AppointmentRepository:
             .order_by(Appointment.scheduled_at)
         )
         return list(self.db.scalars(statement))
+
+    def list_patients_attended_by(self, doctor_id: str) -> list[tuple[User, datetime]]:
+        """Patients with a completed appointment with the doctor, and the last one."""
+        last_attended_at = func.max(Appointment.attended_at).label("last_attended_at")
+        statement = (
+            select(User, last_attended_at)
+            .join(Appointment, Appointment.patient_id == User.id)
+            .where(
+                Appointment.doctor_id == doctor_id,
+                Appointment.status == AppointmentStatus.COMPLETED.value,
+            )
+            .group_by(User.id)
+            .order_by(last_attended_at.desc())
+        )
+        return [(user, attended_at) for user, attended_at in self.db.execute(statement)]
 
     def doctor_has_conflict(
         self,
@@ -102,6 +118,15 @@ class AppointmentRepository:
         ):
             self._update_if_scheduled(appointment, scheduled_at=scheduled_at)
             self.db.commit()
+        self.db.refresh(appointment)
+        return appointment
+
+    def mark_no_show(self, appointment: Appointment) -> Appointment:
+        self._update_if_scheduled(
+            appointment,
+            status=AppointmentStatus.NO_SHOW.value,
+        )
+        self.db.commit()
         self.db.refresh(appointment)
         return appointment
 

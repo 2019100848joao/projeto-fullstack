@@ -18,6 +18,10 @@ SchedulerUserDep = Annotated[
     User,
     Depends(require_roles(UserRole.ATTENDANT, UserRole.ADMIN)),
 ]
+NoShowUserDep = Annotated[
+    User,
+    Depends(require_roles(UserRole.ATTENDANT, UserRole.DOCTOR, UserRole.ADMIN)),
+]
 DoctorOrAdminUserDep = Annotated[
     User,
     Depends(require_roles(UserRole.DOCTOR, UserRole.ADMIN)),

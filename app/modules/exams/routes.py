@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.modules.auth.dependencies import DoctorUserDep
 from app.modules.exams.dependencies import (
     ExamOperatorDep,
     ExamViewerDep,
@@ -139,20 +140,23 @@ def perform_exam(
 @router.post(
     "/{exam_id}/result",
     response_model=ExamRead,
-    summary="Register the text result of a performed exam (attendant, admin)",
+    summary="Register the result of a performed exam (requesting doctor only)",
 )
 def register_exam_result(
     exam_id: str,
     result_create: ExamResultCreate,
-    current_user: ExamOperatorDep,
+    current_user: DoctorUserDep,
     service: ExamServiceDep,
 ) -> Exam:
     try:
         return service.register_result(
+            current_user=current_user,
             exam_id=exam_id,
             result=result_create.result,
         )
     except ExamNotFoundError as exc:
         raise NOT_FOUND from exc
+    except ExamAccessDeniedError as exc:
+        raise ACCESS_DENIED from exc
     except InvalidExamStatusTransitionError as exc:
         raise INVALID_TRANSITION from exc
