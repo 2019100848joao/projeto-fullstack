@@ -51,6 +51,9 @@ class AuthService:
         if not user.is_active:
             raise InactiveUserError
 
+        return self.issue_token(user)
+
+    def issue_token(self, user: User) -> Token:
         return Token(access_token=create_access_token(subject=user.id))
 
     def update_user_role(
