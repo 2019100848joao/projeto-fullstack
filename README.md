@@ -51,7 +51,7 @@ Start Postgres:
 docker compose up -d database
 ```
 
-Migrations run automatically when the app starts. To run them manually:
+Migrations and the base `admin` seed (`SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`) run automatically when the app starts. To run migrations manually:
 
 ```bash
 python -c "from app.core.migrations import run_migrations; run_migrations()"
@@ -61,10 +61,16 @@ python -c "from app.core.migrations import run_migrations; run_migrations()"
 
 - `GET /` returns basic API information.
 - `GET /health` returns health status.
-- `POST /auth/register` creates a user account.
+- `POST /auth/register` creates a `patient` user account and records a registration email.
 - `POST /auth/login` returns a JWT access token from an `email` and `password` JSON body.
 - `GET /auth/me` returns the authenticated user.
+- `GET /auth/users` lists users for administrators (optional `?role=` filter).
 - `PATCH /auth/users/{user_id}/role` changes a user role when the authenticated user has permission.
+- `POST /role-transitions` requests a role transition to `doctor` or `attendant` and records notification emails.
+- `GET /role-transitions` lists role transition requests for administrators (optional `?status=` filter).
+- `POST /role-transitions/{request_id}/approve` approves a pending request, updates the user role, and records an approval email.
+- `POST /role-transitions/{request_id}/reject` rejects a pending request and records a rejection email.
+- `GET /notifications/emails` lists recorded email notifications (all for `admin`, own emails for other roles).
 
 ## Auth Roles
 
@@ -75,9 +81,9 @@ Supported roles:
 - `doctor`
 - `attendant`
 
-Public registration can create `patient`, `doctor`, or `attendant` users. It cannot create `admin` users.
+Public registration creates `patient` users only. An initial `admin` account is seeded on startup, and users can request a transition to `doctor` or `attendant` for `admin` approval.
 
-Role changes:
+Direct role changes (`PATCH /auth/users/{user_id}/role`):
 
 - `admin` can change any user to any role.
 - `doctor` can change `attendant` users to `patient` or `attendant`.
