@@ -8,8 +8,10 @@ from app.modules.notifications.service import NotificationService
 from app.modules.role_transitions.enums import TransitionStatus
 from app.modules.role_transitions.exceptions import (
     InvalidRoleTransitionError,
+    PendingRoleTransitionExistsError,
     RoleTransitionAlreadyReviewedError,
     RoleTransitionNotFoundError,
+    RoleTransitionPermissionError,
 )
 from app.modules.role_transitions.models import RoleTransitionRequest
 from app.modules.role_transitions.repository import RoleTransitionRepository
@@ -34,8 +36,14 @@ class RoleTransitionService:
         current_user: User,
         payload: RoleTransitionCreate,
     ) -> RoleTransitionRequest:
-        if current_user.role == payload.requested_role.value:
+        if (
+            current_user.role == UserRole.ADMIN.value
+            or current_user.role == payload.requested_role.value
+        ):
             raise InvalidRoleTransitionError
+
+        if self.repository.get_pending_by_user_id(current_user.id) is not None:
+            raise PendingRoleTransitionExistsError
 
         transition_request = self.repository.create(
             user_id=current_user.id,
@@ -92,6 +100,9 @@ class RoleTransitionService:
         request_id: str,
         approve: bool,
     ) -> RoleTransitionRequest:
+        if admin_user.role != UserRole.ADMIN.value:
+            raise RoleTransitionPermissionError
+
         transition_request = self.repository.get_by_id(request_id)
         if transition_request is None:
             raise RoleTransitionNotFoundError

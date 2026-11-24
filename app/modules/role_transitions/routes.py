@@ -8,8 +8,10 @@ from app.modules.role_transitions.dependencies import RoleTransitionServiceDep
 from app.modules.role_transitions.enums import TransitionStatus
 from app.modules.role_transitions.exceptions import (
     InvalidRoleTransitionError,
+    PendingRoleTransitionExistsError,
     RoleTransitionAlreadyReviewedError,
     RoleTransitionNotFoundError,
+    RoleTransitionPermissionError,
 )
 from app.modules.role_transitions.models import RoleTransitionRequest
 from app.modules.role_transitions.schemas import (
@@ -25,6 +27,11 @@ def _execute_review(
 ) -> RoleTransitionRequest:
     try:
         return action()
+    except RoleTransitionPermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to review role transitions",
+        ) from exc
     except (RoleTransitionNotFoundError, UserNotFoundError) as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -48,7 +55,12 @@ def request_role_transition(
     except InvalidRoleTransitionError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User already has the requested role",
+            detail="Role transition is not valid for the current user role",
+        ) from exc
+    except PendingRoleTransitionExistsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User already has a pending role transition request",
         ) from exc
 
 

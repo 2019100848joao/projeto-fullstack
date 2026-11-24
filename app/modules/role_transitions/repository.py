@@ -31,6 +31,13 @@ class RoleTransitionRepository:
     def get_by_id(self, request_id: str) -> RoleTransitionRequest | None:
         return self.db.get(RoleTransitionRequest, request_id)
 
+    def get_pending_by_user_id(self, user_id: str) -> RoleTransitionRequest | None:
+        statement = select(RoleTransitionRequest).where(
+            RoleTransitionRequest.user_id == user_id,
+            RoleTransitionRequest.status == TransitionStatus.PENDING.value,
+        )
+        return self.db.scalar(statement)
+
     def list_all(
         self,
         *,

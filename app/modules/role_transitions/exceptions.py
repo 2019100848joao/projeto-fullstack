@@ -10,5 +10,13 @@ class RoleTransitionAlreadyReviewedError(RoleTransitionError):
     pass
 
 
+class PendingRoleTransitionExistsError(RoleTransitionError):
+    pass
+
+
+class RoleTransitionPermissionError(RoleTransitionError):
+    pass
+
+
 class InvalidRoleTransitionError(RoleTransitionError):
     pass
