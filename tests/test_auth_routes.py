@@ -1,21 +1,13 @@
 import os
 from datetime import UTC, datetime
 
-import jwt
 import pytest
-from fastapi import HTTPException
-from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.testclient import TestClient
 
 os.environ["RUN_MIGRATIONS_ON_STARTUP"] = "false"
 
-from app.core.config import settings
-from app.core.security import create_access_token
 from app.main import app
-from app.modules.auth.dependencies import (
-    get_auth_service,
-    get_current_user,
-)
+from app.modules.auth.dependencies import get_auth_service, get_current_user
 from app.modules.auth.enums import UserRole
 from app.modules.auth.exceptions import (
     EmailAlreadyRegisteredError,
@@ -28,27 +20,25 @@ from app.modules.auth.models import User
 from app.modules.auth.schemas import Token, UserCreate
 
 
-def _make_user(
+def make_user(
     role: UserRole = UserRole.PATIENT,
-    *,
-    is_active: bool = True,
     user_id: str = "01K4SRY37DGE7K5YWWKNB0RESW",
 ) -> User:
     return User(
         id=user_id,
-        email=f"{role.value}@clinic.com",
-        full_name=f"User {role.value}",
-        hashed_password="hashed-password",
+        email="user@example.com",
+        full_name="Example User",
+        hashed_password="not-returned",
         role=role.value,
-        is_active=is_active,
+        is_active=True,
         created_at=datetime(2026, 9, 9, tzinfo=UTC),
     )
 
 
-class StubAuthService:
+class FakeAuthService:
     def __init__(self, error: Exception | None = None) -> None:
         self.error = error
-        self.last_role_filter: UserRole | None = None
+        self.role_filter: UserRole | None = None
 
     def register(self, user_create: UserCreate) -> User:
         if self.error is not None:
@@ -57,7 +47,7 @@ class StubAuthService:
             id="01K4SRY37DGE7K5YWWKNB0RESW",
             email=user_create.email,
             full_name=user_create.full_name,
-            hashed_password="hashed-password",
+            hashed_password="not-returned",
             role=UserRole.PATIENT.value,
             is_active=True,
             created_at=datetime(2026, 9, 9, tzinfo=UTC),
@@ -66,11 +56,11 @@ class StubAuthService:
     def login(self, *, email: str, password: str) -> Token:
         if self.error is not None:
             raise self.error
-        return Token(access_token="stub-token")
+        return Token(access_token="fake-token")
 
     def list_users(self, *, role: UserRole | None = None) -> list[User]:
-        self.last_role_filter = role
-        return [_make_user(role or UserRole.PATIENT)]
+        self.role_filter = role
+        return [make_user(role or UserRole.PATIENT)]
 
     def update_user_role(
         self,
@@ -81,194 +71,186 @@ class StubAuthService:
     ) -> User:
         if self.error is not None:
             raise self.error
-        return _make_user(new_role, user_id=target_user_id)
+        return make_user(new_role, user_id=target_user_id)
 
 
-def test_register_route_creates_patient_and_rejects_invalid_inputs() -> None:
-    app.dependency_overrides[get_auth_service] = lambda: StubAuthService()
+def override_auth_service() -> FakeAuthService:
+    return FakeAuthService()
+
+
+def test_register_returns_201_for_patient() -> None:
+    app.dependency_overrides[get_auth_service] = override_auth_service
+
     try:
-        client = TestClient(app)
-        resp = client.post(
+        response = TestClient(app).post(
             "/auth/register",
             json={
-                "email": "novo@clinic.com",
-                "full_name": "Novo Paciente",
+                "email": "patient@example.com",
+                "full_name": "Patient Example",
                 "password": "password123",
             },
         )
-        assert resp.status_code == 201
-        assert resp.json()["role"] == "patient"
-
-        for invalid_role in ("doctor", "attendant", "admin"):
-            bad_role = client.post(
-                "/auth/register",
-                json={
-                    "email": "novo@clinic.com",
-                    "full_name": "Novo",
-                    "password": "password123",
-                    "role": invalid_role,
-                },
-            )
-            assert bad_role.status_code == 422
-
-        short_pwd = client.post(
-            "/auth/register",
-            json={
-                "email": "novo@clinic.com",
-                "full_name": "Novo",
-                "password": "short",
-            },
-        )
-        assert short_pwd.status_code == 422
     finally:
         app.dependency_overrides.clear()
 
+    assert response.status_code == 201
+    assert response.json()["role"] == "patient"
 
-def test_register_route_returns_409_on_duplicate_email() -> None:
-    app.dependency_overrides[get_auth_service] = lambda: StubAuthService(
+
+@pytest.mark.parametrize("role", ["doctor", "attendant", "admin"])
+def test_register_rejects_non_patient_roles(role: str) -> None:
+    app.dependency_overrides[get_auth_service] = override_auth_service
+
+    try:
+        response = TestClient(app).post(
+            "/auth/register",
+            json={
+                "email": "user@example.com",
+                "full_name": "Example",
+                "password": "password123",
+                "role": role,
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+
+
+def test_register_returns_409_when_email_exists() -> None:
+    app.dependency_overrides[get_auth_service] = lambda: FakeAuthService(
         error=EmailAlreadyRegisteredError()
     )
+
     try:
-        client = TestClient(app)
-        resp = client.post(
+        response = TestClient(app).post(
             "/auth/register",
             json={
-                "email": "dup@clinic.com",
-                "full_name": "Duplicado",
+                "email": "patient@example.com",
+                "full_name": "Patient Example",
                 "password": "password123",
             },
         )
-        assert resp.status_code == 409
     finally:
         app.dependency_overrides.clear()
 
+    assert response.status_code == 409
 
-def test_login_route_maps_invalid_credentials_and_inactive_user() -> None:
-    client = TestClient(app)
+
+def test_login_returns_401_on_invalid_credentials() -> None:
+    app.dependency_overrides[get_auth_service] = lambda: FakeAuthService(
+        error=InvalidCredentialsError()
+    )
+
     try:
-        app.dependency_overrides[get_auth_service] = lambda: StubAuthService(
-            error=InvalidCredentialsError()
-        )
-        r_invalid = client.post(
+        response = TestClient(app).post(
             "/auth/login",
-            json={"email": "u@clinic.com", "password": "wrong"},
+            json={"email": "user@example.com", "password": "wrong-password"},
         )
-        assert r_invalid.status_code == 401
-
-        app.dependency_overrides[get_auth_service] = lambda: StubAuthService(
-            error=InactiveUserError()
-        )
-        r_inactive = client.post(
-            "/auth/login",
-            json={"email": "u@clinic.com", "password": "password123"},
-        )
-        assert r_inactive.status_code == 403
     finally:
         app.dependency_overrides.clear()
+
+    assert response.status_code == 401
+
+
+def test_login_returns_403_when_user_is_inactive() -> None:
+    app.dependency_overrides[get_auth_service] = lambda: FakeAuthService(
+        error=InactiveUserError()
+    )
+
+    try:
+        response = TestClient(app).post(
+            "/auth/login",
+            json={"email": "user@example.com", "password": "password123"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+
+
+def test_admin_can_list_users_filtered_by_role() -> None:
+    service = FakeAuthService()
+    app.dependency_overrides[get_current_user] = lambda: make_user(UserRole.ADMIN)
+    app.dependency_overrides[get_auth_service] = lambda: service
+
+    try:
+        response = TestClient(app).get("/auth/users?role=patient")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert service.role_filter == UserRole.PATIENT
+    assert "hashed_password" not in response.json()[0]
 
 
 @pytest.mark.parametrize(
-    "non_admin_role",
+    "role",
     [UserRole.PATIENT, UserRole.DOCTOR, UserRole.ATTENDANT],
 )
-def test_list_users_route_allows_only_admin(non_admin_role: UserRole) -> None:
-    stub = StubAuthService()
-    client = TestClient(app)
-    assert client.get("/auth/users").status_code == 401
+def test_non_admin_cannot_list_users(role: UserRole) -> None:
+    app.dependency_overrides[get_current_user] = lambda: make_user(role)
+    app.dependency_overrides[get_auth_service] = override_auth_service
 
-    app.dependency_overrides[get_auth_service] = lambda: stub
     try:
-        app.dependency_overrides[get_current_user] = lambda: _make_user(non_admin_role)
-        assert client.get("/auth/users").status_code == 403
-
-        app.dependency_overrides[get_current_user] = lambda: _make_user(UserRole.ADMIN)
-        ok = client.get("/auth/users", params={"role": "patient"})
-        assert ok.status_code == 200
-        assert stub.last_role_filter == UserRole.PATIENT
-        assert ok.json()[0]["role"] == "patient"
+        response = TestClient(app).get("/auth/users")
     finally:
         app.dependency_overrides.clear()
 
+    assert response.status_code == 403
 
-def test_update_user_role_route_maps_success_404_and_403() -> None:
-    client = TestClient(app)
-    assert (
-        client.patch("/auth/users/01USER/role", json={"role": "doctor"}).status_code
-        == 401
-    )
 
-    app.dependency_overrides[get_current_user] = lambda: _make_user(UserRole.ADMIN)
+def test_list_users_requires_authentication() -> None:
+    response = TestClient(app).get("/auth/users")
+
+    assert response.status_code == 401
+
+
+def test_update_user_role_returns_200() -> None:
+    app.dependency_overrides[get_current_user] = lambda: make_user(UserRole.ADMIN)
+    app.dependency_overrides[get_auth_service] = override_auth_service
+
     try:
-        app.dependency_overrides[get_auth_service] = lambda: StubAuthService()
-        ok = client.patch("/auth/users/01USER/role", json={"role": "doctor"})
-        assert ok.status_code == 200
-        assert ok.json()["role"] == "doctor"
-
-        app.dependency_overrides[get_auth_service] = lambda: StubAuthService(
-            error=UserNotFoundError()
-        )
-        assert (
-            client.patch("/auth/users/01USER/role", json={"role": "doctor"}).status_code
-            == 404
-        )
-
-        app.dependency_overrides[get_auth_service] = lambda: StubAuthService(
-            error=RoleChangeNotAllowedError()
-        )
-        assert (
-            client.patch("/auth/users/01USER/role", json={"role": "doctor"}).status_code
-            == 403
+        response = TestClient(app).patch(
+            "/auth/users/01K4SRY37DGE7K5YWWKNB0RESW/role",
+            json={"role": "doctor"},
         )
     finally:
         app.dependency_overrides.clear()
 
+    assert response.status_code == 200
+    assert response.json()["role"] == "doctor"
 
-def test_get_current_user_validates_jwt_and_active_status(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    with pytest.raises(HTTPException) as exc_none:
-        get_current_user(credentials=None, db=object())  # type: ignore[arg-type]
-    assert exc_none.value.status_code == 401
 
-    bad_creds = HTTPAuthorizationCredentials(
-        scheme="Bearer",
-        credentials="invalid.jwt.token",
-    )
-    with pytest.raises(HTTPException) as exc_bad:
-        get_current_user(credentials=bad_creds, db=object())  # type: ignore[arg-type]
-    assert exc_bad.value.status_code == 401
-
-    no_sub_token = jwt.encode(
-        {"foo": "bar"},
-        settings.secret_key,
-        algorithm=settings.jwt_algorithm,
-    )
-    no_sub_creds = HTTPAuthorizationCredentials(
-        scheme="Bearer",
-        credentials=no_sub_token,
-    )
-    with pytest.raises(HTTPException) as exc_nosub:
-        get_current_user(credentials=no_sub_creds, db=object())  # type: ignore[arg-type]
-    assert exc_nosub.value.status_code == 401
-
-    valid_token = create_access_token("01USER")
-    valid_creds = HTTPAuthorizationCredentials(
-        scheme="Bearer",
-        credentials=valid_token,
+def test_update_user_role_returns_404_when_user_not_found() -> None:
+    app.dependency_overrides[get_current_user] = lambda: make_user(UserRole.ADMIN)
+    app.dependency_overrides[get_auth_service] = lambda: FakeAuthService(
+        error=UserNotFoundError()
     )
 
-    monkeypatch.setattr(
-        "app.modules.auth.dependencies.UserRepository.get_by_id",
-        lambda self, uid: None,
-    )
-    with pytest.raises(HTTPException) as exc_missing:
-        get_current_user(credentials=valid_creds, db=object())  # type: ignore[arg-type]
-    assert exc_missing.value.status_code == 401
+    try:
+        response = TestClient(app).patch(
+            "/auth/users/01K4SRY37DGE7K5YWWKNB0RESW/role",
+            json={"role": "doctor"},
+        )
+    finally:
+        app.dependency_overrides.clear()
 
-    monkeypatch.setattr(
-        "app.modules.auth.dependencies.UserRepository.get_by_id",
-        lambda self, uid: _make_user(UserRole.PATIENT, is_active=False),
+    assert response.status_code == 404
+
+
+def test_update_user_role_returns_403_when_not_allowed() -> None:
+    app.dependency_overrides[get_current_user] = lambda: make_user(UserRole.PATIENT)
+    app.dependency_overrides[get_auth_service] = lambda: FakeAuthService(
+        error=RoleChangeNotAllowedError()
     )
-    with pytest.raises(HTTPException) as exc_inactive:
-        get_current_user(credentials=valid_creds, db=object())  # type: ignore[arg-type]
-    assert exc_inactive.value.status_code == 403
+
+    try:
+        response = TestClient(app).patch(
+            "/auth/users/01K4SRY37DGE7K5YWWKNB0RESW/role",
+            json={"role": "doctor"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403

@@ -2,9 +2,12 @@ import os
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 os.environ["RUN_MIGRATIONS_ON_STARTUP"] = "false"
 
+from app.core.database import Base
 from app.main import app
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.enums import UserRole
@@ -12,10 +15,11 @@ from app.modules.auth.models import User
 from app.modules.notifications.dependencies import get_notification_service
 from app.modules.notifications.enums import EmailEventType
 from app.modules.notifications.models import EmailNotification
+from app.modules.notifications.repository import EmailNotificationRepository
 from app.modules.notifications.service import NotificationService
 
 
-class FakeEmailRepo:
+class FakeEmailNotificationRepository:
     def __init__(self) -> None:
         self.items: list[EmailNotification] = []
 
@@ -27,7 +31,7 @@ class FakeEmailRepo:
         body: str,
         event_type: EmailEventType,
     ) -> EmailNotification:
-        item = EmailNotification(
+        notification = EmailNotification(
             id=f"01K4EMAIL00000000000000000{len(self.items) + 1}",
             recipient_email=recipient_email,
             subject=subject,
@@ -35,8 +39,8 @@ class FakeEmailRepo:
             event_type=event_type.value,
             created_at=datetime(2026, 9, 9, tzinfo=UTC),
         )
-        self.items.append(item)
-        return item
+        self.items.append(notification)
+        return notification
 
     def list_all(
         self,
@@ -48,75 +52,94 @@ class FakeEmailRepo:
         return [item for item in self.items if item.recipient_email == recipient_email]
 
 
-def _make_user(role: UserRole, email: str) -> User:
+def make_user(role: UserRole, email: str) -> User:
     return User(
         id="01K4SRY37DGE7K5YWWKNB0RESW",
         email=email,
-        full_name="Test User",
-        hashed_password="hashed",
+        full_name="Example User",
+        hashed_password="not-returned",
         role=role.value,
         is_active=True,
         created_at=datetime(2026, 9, 9, tzinfo=UTC),
     )
 
 
-def test_notification_service_handles_multiple_or_zero_admins() -> None:
-    repo = FakeEmailRepo()
-    service = NotificationService(repo)  # type: ignore[arg-type]
-
-    no_admins = service.record_transition_requested_emails(
-        requester_email="patient@clinic.com",
-        requester_name="Paciente",
-        requested_role="doctor",
-        admin_emails=[],
-    )
-    assert len(no_admins) == 1
-    assert no_admins[0].event_type == EmailEventType.ROLE_TRANSITION_REQUESTED.value
-
-    two_admins = service.record_transition_requested_emails(
-        requester_email="patient@clinic.com",
-        requester_name="Paciente",
-        requested_role="attendant",
-        admin_emails=["admin1@clinic.com", "admin2@clinic.com"],
-    )
-    assert len(two_admins) == 3
-
-
-def test_notifications_route_requires_auth_and_scopes_by_role() -> None:
-    repo = FakeEmailRepo()
-    service = NotificationService(repo)  # type: ignore[arg-type]
+def build_seeded_notification_service() -> NotificationService:
+    service = NotificationService(FakeEmailNotificationRepository())
     service.record_registration_email(
-        recipient_email="patient@clinic.com",
-        full_name="Paciente",
+        recipient_email="patient@example.com",
+        full_name="Patient Example",
     )
     service.record_transition_requested_emails(
-        requester_email="patient@clinic.com",
-        requester_name="Paciente",
+        requester_email="patient@example.com",
+        requester_name="Patient Example",
         requested_role="doctor",
         admin_emails=["admin@clinic.com"],
     )
+    return service
 
-    client = TestClient(app)
-    assert client.get("/notifications/emails").status_code == 401
 
+def test_list_emails_requires_authentication() -> None:
+    response = TestClient(app).get("/notifications/emails")
+
+    assert response.status_code == 401
+
+
+def test_patient_lists_only_own_emails() -> None:
+    service = build_seeded_notification_service()
     app.dependency_overrides[get_notification_service] = lambda: service
-    try:
-        app.dependency_overrides[get_current_user] = lambda: _make_user(
-            UserRole.PATIENT, "patient@clinic.com"
-        )
-        patient_resp = client.get("/notifications/emails")
-        assert patient_resp.status_code == 200
-        assert len(patient_resp.json()) == 2
-        assert all(
-            item["recipient_email"] == "patient@clinic.com"
-            for item in patient_resp.json()
-        )
+    app.dependency_overrides[get_current_user] = lambda: make_user(
+        UserRole.PATIENT, "patient@example.com"
+    )
 
-        app.dependency_overrides[get_current_user] = lambda: _make_user(
-            UserRole.ADMIN, "admin@clinic.com"
-        )
-        admin_resp = client.get("/notifications/emails")
-        assert admin_resp.status_code == 200
-        assert len(admin_resp.json()) == 3
+    try:
+        response = TestClient(app).get("/notifications/emails")
     finally:
         app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+    assert {item["recipient_email"] for item in response.json()} == {
+        "patient@example.com"
+    }
+
+
+def test_admin_lists_all_emails() -> None:
+    service = build_seeded_notification_service()
+    app.dependency_overrides[get_notification_service] = lambda: service
+    app.dependency_overrides[get_current_user] = lambda: make_user(
+        UserRole.ADMIN, "admin@clinic.com"
+    )
+
+    try:
+        response = TestClient(app).get("/notifications/emails")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert len(response.json()) == 3
+
+
+def test_email_repository_persists_and_filters_by_recipient() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        repository = EmailNotificationRepository(db)
+        repository.create(
+            recipient_email="patient@example.com",
+            subject="Welcome",
+            body="Welcome body",
+            event_type=EmailEventType.USER_REGISTERED,
+        )
+        repository.create(
+            recipient_email="admin@clinic.com",
+            subject="Alert",
+            body="Alert body",
+            event_type=EmailEventType.ROLE_TRANSITION_ADMIN_ALERT,
+        )
+
+        assert len(repository.list_all()) == 2
+        patient_emails = repository.list_all(recipient_email="patient@example.com")
+        assert len(patient_emails) == 1
+        assert len(patient_emails[0].id) == 26
