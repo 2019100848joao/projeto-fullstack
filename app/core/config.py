@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+psycopg://clinic_user:clinic_password@localhost:5432/clinic_db"
     )
+    seed_admin_on_startup: bool = True
+    seed_admin_email: str = "admin@clinic.com"
+    seed_admin_password: str = "Admin123!"
+    seed_admin_full_name: str = "Clinic Administrator"
 
     @property
     def migration_database_url(self) -> str:

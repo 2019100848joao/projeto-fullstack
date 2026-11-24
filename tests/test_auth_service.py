@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 import pytest
+from pydantic import ValidationError
 
 from app.core.security import hash_password
 from app.modules.auth.enums import UserRole
@@ -27,6 +28,13 @@ class FakeUserRepository:
     def get_by_id(self, user_id: str) -> User | None:
         return self.user
 
+    def list_all(self, *, role: UserRole | None = None) -> list[User]:
+        if self.user is None:
+            return []
+        if role is not None and self.user.role != role.value:
+            return []
+        return [self.user]
+
     def update_role(self, user: User, role: UserRole) -> User:
         user.role = role.value
         return user
@@ -40,7 +48,7 @@ class FakeUserRepository:
         role: UserRole = UserRole.PATIENT,
     ) -> User:
         self.created_role = role
-        return User(
+        self.user = User(
             id="01K4SRY37DGE7K5YWWKNB0RESW",
             email=email,
             full_name=full_name,
@@ -49,6 +57,7 @@ class FakeUserRepository:
             is_active=True,
             created_at=datetime(2026, 9, 9, tzinfo=UTC),
         )
+        return self.user
 
 
 def test_register_raises_domain_error_when_email_exists() -> None:
@@ -76,21 +85,43 @@ def test_register_raises_domain_error_when_email_exists() -> None:
         )
 
 
-def test_register_accepts_non_admin_role() -> None:
+def test_register_creates_patient_only() -> None:
     repository = FakeUserRepository()
     service = AuthService(repository)
 
     user = service.register(
         UserCreate(
-            email="doctor@example.com",
-            full_name="Dr. Example",
+            email="patient@example.com",
+            full_name="Patient Example",
             password="password123",
-            role=RegistrationRole.DOCTOR,
+            role=RegistrationRole.PATIENT,
         )
     )
 
-    assert repository.created_role == UserRole.DOCTOR
-    assert user.role == "doctor"
+    assert repository.created_role == UserRole.PATIENT
+    assert user.role == "patient"
+
+    with pytest.raises(ValidationError):
+        UserCreate(
+            email="doctor@example.com",
+            full_name="Dr. Example",
+            password="password123",
+            role="doctor",  # type: ignore[arg-type]
+        )
+
+
+def test_ensure_base_admin_creates_admin_when_missing() -> None:
+    repository = FakeUserRepository()
+    service = AuthService(repository)
+
+    admin = service.ensure_base_admin(
+        email="admin@clinic.com",
+        full_name="Clinic Administrator",
+        password="Admin123!",
+    )
+
+    assert repository.created_role == UserRole.ADMIN
+    assert admin.role == "admin"
 
 
 def test_login_raises_domain_error_when_credentials_are_invalid() -> None:

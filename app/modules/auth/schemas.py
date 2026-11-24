@@ -8,8 +8,6 @@ from app.modules.auth.enums import UserRole
 
 class RegistrationRole(StrEnum):
     PATIENT = "patient"
-    DOCTOR = "doctor"
-    ATTENDANT = "attendant"
 
 
 class UserCreate(BaseModel):

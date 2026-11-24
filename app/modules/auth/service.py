@@ -10,6 +10,7 @@ from app.modules.auth.exceptions import (
 from app.modules.auth.models import User
 from app.modules.auth.repository import UserRepository
 from app.modules.auth.schemas import Token, UserCreate
+from app.modules.notifications.service import NotificationService
 
 ROLE_CHANGE_RULES: dict[UserRole, dict[UserRole, set[UserRole]]] = {
     UserRole.ADMIN: {
@@ -28,20 +29,33 @@ ROLE_CHANGE_RULES: dict[UserRole, dict[UserRole, set[UserRole]]] = {
 
 
 class AuthService:
-    def __init__(self, repository: UserRepository) -> None:
+    def __init__(
+        self,
+        repository: UserRepository,
+        notification_service: NotificationService | None = None,
+    ) -> None:
         self.repository = repository
+        self.notification_service = notification_service
 
     def register(self, user_create: UserCreate) -> User:
         existing_user = self.repository.get_by_email(user_create.email)
         if existing_user is not None:
             raise EmailAlreadyRegisteredError
 
-        return self.repository.create(
+        user = self.repository.create(
             email=user_create.email,
             full_name=user_create.full_name,
             hashed_password=hash_password(user_create.password),
-            role=UserRole(user_create.role),
+            role=UserRole.PATIENT,
         )
+
+        if self.notification_service is not None:
+            self.notification_service.record_registration_email(
+                recipient_email=user.email,
+                full_name=user.full_name,
+            )
+
+        return user
 
     def login(self, *, email: str, password: str) -> Token:
         user = self.repository.get_by_email(email)
@@ -52,6 +66,9 @@ class AuthService:
             raise InactiveUserError
 
         return Token(access_token=create_access_token(subject=user.id))
+
+    def list_users(self, *, role: UserRole | None = None) -> list[User]:
+        return self.repository.list_all(role=role)
 
     def update_user_role(
         self,
@@ -72,3 +89,21 @@ class AuthService:
             raise RoleChangeNotAllowedError
 
         return self.repository.update_role(target_user, new_role)
+
+    def ensure_base_admin(
+        self,
+        *,
+        email: str,
+        full_name: str,
+        password: str,
+    ) -> User:
+        existing_user = self.repository.get_by_email(email)
+        if existing_user is not None:
+            return existing_user
+
+        return self.repository.create(
+            email=email,
+            full_name=full_name,
+            hashed_password=hash_password(password),
+            role=UserRole.ADMIN,
+        )
