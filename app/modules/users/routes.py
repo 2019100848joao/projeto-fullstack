@@ -1,15 +1,29 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.modules.auth.dependencies import CurrentUserDep
+from app.modules.auth.dependencies import CurrentUserDep, StaffUserDep
+from app.modules.auth.enums import UserRole
 from app.modules.users.dependencies import UserServiceDep
 from app.modules.users.exceptions import (
     DocumentAlreadyExistsError,
     DocumentTypeNotFoundError,
 )
-from app.modules.users.models import UserDocument
-from app.modules.users.schemas import UserDocumentBatchCreate, UserDocumentRead
+from app.modules.users.models import User, UserDocument
+from app.modules.users.schemas import (
+    UserDocumentBatchCreate,
+    UserDocumentRead,
+    UserListItem,
+)
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+@router.get("", response_model=list[UserListItem])
+def list_users(
+    _: StaffUserDep,
+    user_service: UserServiceDep,
+    role: UserRole | None = None,
+) -> list[User]:
+    return user_service.list_users(role=role)
 
 
 @router.post(

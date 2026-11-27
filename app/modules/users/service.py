@@ -1,3 +1,4 @@
+from app.modules.auth.enums import UserRole
 from app.modules.users.exceptions import (
     DocumentAlreadyExistsError,
     DocumentTypeNotFoundError,
@@ -10,6 +11,9 @@ from app.modules.users.schemas import UserDocumentCreate
 class UserService:
     def __init__(self, repository: UserRepository) -> None:
         self.repository = repository
+
+    def list_users(self, *, role: UserRole | None = None) -> list[User]:
+        return self.repository.list_all(role=role)
 
     def create_user_documents(
         self,

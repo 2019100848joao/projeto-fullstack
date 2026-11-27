@@ -31,13 +31,16 @@ class UserDocumentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class UserRead(BaseModel):
+class UserListItem(BaseModel):
     id: str
     email: EmailStr
     full_name: str
     role: UserRole
-    documents: list[UserDocumentRead] = Field(default_factory=list)
     is_active: bool
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class UserRead(UserListItem):
+    documents: list[UserDocumentRead] = Field(default_factory=list)
