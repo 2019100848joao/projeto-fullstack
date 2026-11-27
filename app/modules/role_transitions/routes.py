@@ -42,6 +42,11 @@ def _execute_review(
             status_code=status.HTTP_409_CONFLICT,
             detail="Role transition request has already been reviewed",
         ) from exc
+    except InvalidRoleTransitionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Role transition is no longer valid for the user's current role",
+        ) from exc
 
 
 @router.post("", response_model=RoleTransitionRead, status_code=status.HTTP_201_CREATED)

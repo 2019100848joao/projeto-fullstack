@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import Base
@@ -30,6 +31,12 @@ from app.modules.role_transitions.service import RoleTransitionService
 class FakeEmailNotificationRepository:
     def __init__(self) -> None:
         self.items: list[EmailNotification] = []
+
+    def commit(self) -> None:
+        pass
+
+    def rollback(self) -> None:
+        pass
 
     def create(
         self,
@@ -64,6 +71,12 @@ class FakeUserRepository:
     def __init__(self, users: list[User]) -> None:
         self.users = {user.id: user for user in users}
 
+    def commit(self) -> None:
+        pass
+
+    def rollback(self) -> None:
+        pass
+
     def get_by_id(self, user_id: str) -> User | None:
         return self.users.get(user_id)
 
@@ -82,12 +95,23 @@ class FakeRoleTransitionRepository:
     def __init__(self) -> None:
         self.requests: dict[str, RoleTransitionRequest] = {}
 
+    def commit(self) -> None:
+        pass
+
+    def rollback(self) -> None:
+        pass
+
     def create(
         self,
         *,
         user_id: str,
         requested_role: TransitionTargetRole,
     ) -> RoleTransitionRequest:
+        if any(
+            item.user_id == user_id and item.status == TransitionStatus.PENDING.value
+            for item in self.requests.values()
+        ):
+            raise IntegrityError("INSERT", {}, Exception("unique pending"))
         req_id = f"01K4REQ0000000000000000000{len(self.requests) + 1}"
         request = RoleTransitionRequest(
             id=req_id,
@@ -99,17 +123,13 @@ class FakeRoleTransitionRepository:
         self.requests[req_id] = request
         return request
 
-    def get_by_id(self, request_id: str) -> RoleTransitionRequest | None:
+    def get_by_id(
+        self,
+        request_id: str,
+        *,
+        for_update: bool = False,
+    ) -> RoleTransitionRequest | None:
         return self.requests.get(request_id)
-
-    def get_pending_by_user_id(self, user_id: str) -> RoleTransitionRequest | None:
-        for item in self.requests.values():
-            if (
-                item.user_id == user_id
-                and item.status == TransitionStatus.PENDING.value
-            ):
-                return item
-        return None
 
     def list_all(
         self,
@@ -120,13 +140,6 @@ class FakeRoleTransitionRepository:
         if status is not None:
             items = [item for item in items if item.status == status.value]
         return items
-
-    def save(
-        self,
-        transition_request: RoleTransitionRequest,
-    ) -> RoleTransitionRequest:
-        self.requests[transition_request.id] = transition_request
-        return transition_request
 
 
 def make_user(
@@ -207,8 +220,7 @@ def test_approve_transition_updates_user_role_and_records_approval_email() -> No
         is_admin=False,
     )
     assert (
-        patient_emails[-1].event_type
-        == EmailEventType.ROLE_TRANSITION_APPROVED.value
+        patient_emails[-1].event_type == EmailEventType.ROLE_TRANSITION_APPROVED.value
     )
 
 
@@ -228,8 +240,7 @@ def test_reject_transition_keeps_patient_role_and_records_rejection_email() -> N
         is_admin=False,
     )
     assert (
-        patient_emails[-1].event_type
-        == EmailEventType.ROLE_TRANSITION_REJECTED.value
+        patient_emails[-1].event_type == EmailEventType.ROLE_TRANSITION_REJECTED.value
     )
 
 
@@ -354,3 +365,106 @@ def test_role_transition_workflow_persists_in_database() -> None:
         assert updated_patient is not None
         assert updated_patient.role == "doctor"
         assert len(email_repository.list_all()) == 3
+
+
+class FailingEmailNotificationRepository(FakeEmailNotificationRepository):
+    def create(self, **kwargs: object) -> EmailNotification:
+        raise RuntimeError("email storage unavailable")
+
+
+def build_db_service(
+    db: Session,
+    notification_service: NotificationService | None = None,
+) -> tuple[RoleTransitionService, UserRepository, User, User]:
+    user_repository = UserRepository(db)
+    service = RoleTransitionService(
+        repository=RoleTransitionRepository(db),
+        user_repository=user_repository,
+        notification_service=notification_service
+        or NotificationService(EmailNotificationRepository(db)),
+    )
+    admin = user_repository.create(
+        email="admin@clinic.com",
+        full_name="Clinic Administrator",
+        hashed_password="hashed-password",
+        role=UserRole.ADMIN,
+    )
+    patient = user_repository.create(
+        email="patient@example.com",
+        full_name="Patient Example",
+        hashed_password="hashed-password",
+        role=UserRole.PATIENT,
+    )
+    db.commit()
+    return service, user_repository, admin, patient
+
+
+def make_engine():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    return engine
+
+
+def test_unique_index_blocks_second_pending_request_in_database() -> None:
+    with Session(make_engine()) as db:
+        service, _, _, patient = build_db_service(db)
+        service.request_transition(
+            current_user=patient,
+            payload=RoleTransitionCreate(requested_role=TransitionTargetRole.DOCTOR),
+        )
+
+        with pytest.raises(PendingRoleTransitionExistsError):
+            service.request_transition(
+                current_user=patient,
+                payload=RoleTransitionCreate(
+                    requested_role=TransitionTargetRole.ATTENDANT
+                ),
+            )
+
+        assert len(service.list_requests(status=TransitionStatus.PENDING)) == 1
+
+
+def test_approve_rejects_request_when_user_role_changed_meanwhile() -> None:
+    service, _, user_repository, admin, patient = build_service()
+    request = service.request_transition(
+        current_user=patient,
+        payload=RoleTransitionCreate(requested_role=TransitionTargetRole.DOCTOR),
+    )
+    user_repository.update_role(patient, UserRole.ADMIN)
+
+    with pytest.raises(InvalidRoleTransitionError):
+        service.approve_transition(admin_user=admin, request_id=request.id)
+
+    assert patient.role == UserRole.ADMIN.value
+    assert request.status == TransitionStatus.PENDING.value
+
+
+def test_approve_is_atomic_when_notification_fails() -> None:
+    engine = make_engine()
+    with Session(engine) as db:
+        service, _, admin, patient = build_db_service(db)
+        request = service.request_transition(
+            current_user=patient,
+            payload=RoleTransitionCreate(requested_role=TransitionTargetRole.DOCTOR),
+        )
+        request_id, patient_id, admin_id = request.id, patient.id, admin.id
+
+    with Session(engine) as db:
+        failing_service = RoleTransitionService(
+            repository=RoleTransitionRepository(db),
+            user_repository=UserRepository(db),
+            notification_service=NotificationService(
+                FailingEmailNotificationRepository()
+            ),
+        )
+        admin = UserRepository(db).get_by_id(admin_id)
+        assert admin is not None
+        with pytest.raises(RuntimeError):
+            failing_service.approve_transition(admin_user=admin, request_id=request_id)
+
+    with Session(engine) as db:
+        stored_patient = UserRepository(db).get_by_id(patient_id)
+        stored_request = RoleTransitionRepository(db).get_by_id(request_id)
+        assert stored_patient is not None and stored_request is not None
+        assert stored_patient.role == UserRole.PATIENT.value
+        assert stored_request.status == TransitionStatus.PENDING.value

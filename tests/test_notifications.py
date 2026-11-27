@@ -23,6 +23,12 @@ class FakeEmailNotificationRepository:
     def __init__(self) -> None:
         self.items: list[EmailNotification] = []
 
+    def commit(self) -> None:
+        pass
+
+    def rollback(self) -> None:
+        pass
+
     def create(
         self,
         *,
@@ -92,10 +98,7 @@ def test_patient_lists_only_own_emails() -> None:
         UserRole.PATIENT, "patient@example.com"
     )
 
-    try:
-        response = TestClient(app).get("/notifications/emails")
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).get("/notifications/emails")
 
     assert response.status_code == 200
     assert len(response.json()) == 2
@@ -111,10 +114,7 @@ def test_admin_lists_all_emails() -> None:
         UserRole.ADMIN, "admin@clinic.com"
     )
 
-    try:
-        response = TestClient(app).get("/notifications/emails")
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).get("/notifications/emails")
 
     assert response.status_code == 200
     assert len(response.json()) == 3

@@ -1,14 +1,11 @@
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
+from app.core.database import SqlRepository
 from app.modules.auth.enums import UserRole
 from app.modules.auth.models import User
 
 
-class UserRepository:
-    def __init__(self, db: Session) -> None:
-        self.db = db
-
+class UserRepository(SqlRepository):
     def get_by_id(self, user_id: str) -> User | None:
         return self.db.get(User, user_id)
 
@@ -24,8 +21,7 @@ class UserRepository:
 
     def update_role(self, user: User, role: UserRole) -> User:
         user.role = role.value
-        self.db.commit()
-        self.db.refresh(user)
+        self.db.flush()
         return user
 
     def create(
@@ -43,6 +39,5 @@ class UserRepository:
             role=role.value,
         )
         self.db.add(user)
-        self.db.commit()
-        self.db.refresh(user)
+        self.db.flush()
         return user

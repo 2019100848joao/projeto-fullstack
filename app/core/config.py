@@ -1,4 +1,11 @@
+from typing import Self
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+LOCAL_APP_ENV = "development"
+LOCAL_SEED_ADMIN_EMAIL = "admin@clinic.com"
+LOCAL_SEED_ADMIN_PASSWORD = "Admin123!"
 
 
 class Settings(BaseSettings):
@@ -13,9 +20,20 @@ class Settings(BaseSettings):
         "postgresql+psycopg://clinic_user:clinic_password@localhost:5432/clinic_db"
     )
     seed_admin_on_startup: bool = True
-    seed_admin_email: str = "admin@clinic.com"
-    seed_admin_password: str = "Admin123!"
+    # Outside the local environment these must be set explicitly, otherwise
+    # the base admin seed is skipped (no well-known credentials in prod).
+    seed_admin_email: str | None = None
+    seed_admin_password: str | None = None
     seed_admin_full_name: str = "Clinic Administrator"
+
+    @model_validator(mode="after")
+    def apply_local_seed_admin_defaults(self) -> Self:
+        if self.app_env == LOCAL_APP_ENV:
+            self.seed_admin_email = self.seed_admin_email or LOCAL_SEED_ADMIN_EMAIL
+            self.seed_admin_password = (
+                self.seed_admin_password or LOCAL_SEED_ADMIN_PASSWORD
+            )
+        return self
 
     @property
     def migration_database_url(self) -> str:

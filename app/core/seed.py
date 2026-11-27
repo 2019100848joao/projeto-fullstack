@@ -1,3 +1,5 @@
+import logging
+
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -6,8 +8,17 @@ from app.modules.auth.models import User
 from app.modules.auth.repository import UserRepository
 from app.modules.auth.service import AuthService
 
+logger = logging.getLogger(__name__)
 
-def ensure_base_admin(db: Session) -> User:
+
+def ensure_base_admin(db: Session) -> User | None:
+    if not settings.seed_admin_email or not settings.seed_admin_password:
+        logger.warning(
+            "Base admin seed skipped: SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD "
+            "must be set outside the local environment"
+        )
+        return None
+
     service = AuthService(UserRepository(db))
     return service.ensure_base_admin(
         email=settings.seed_admin_email,

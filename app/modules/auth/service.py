@@ -1,3 +1,5 @@
+from sqlalchemy.exc import IntegrityError
+
 from app.core.security import create_access_token, hash_password, verify_password
 from app.modules.auth.enums import UserRole
 from app.modules.auth.exceptions import (
@@ -42,12 +44,17 @@ class AuthService:
         if existing_user is not None:
             raise EmailAlreadyRegisteredError
 
-        user = self.repository.create(
-            email=user_create.email,
-            full_name=user_create.full_name,
-            hashed_password=hash_password(user_create.password),
-            role=UserRole.PATIENT,
-        )
+        try:
+            user = self.repository.create(
+                email=user_create.email,
+                full_name=user_create.full_name,
+                hashed_password=hash_password(user_create.password),
+                role=UserRole.PATIENT,
+            )
+        except IntegrityError as exc:
+            # Concurrent registration with the same email won the race.
+            self.repository.rollback()
+            raise EmailAlreadyRegisteredError from exc
 
         if self.notification_service is not None:
             self.notification_service.record_registration_email(
@@ -55,6 +62,7 @@ class AuthService:
                 full_name=user.full_name,
             )
 
+        self.repository.commit()
         return user
 
     def login(self, *, email: str, password: str) -> Token:
@@ -88,7 +96,9 @@ class AuthService:
         if allowed_target_roles is None or new_role not in allowed_target_roles:
             raise RoleChangeNotAllowedError
 
-        return self.repository.update_role(target_user, new_role)
+        updated_user = self.repository.update_role(target_user, new_role)
+        self.repository.commit()
+        return updated_user
 
     def ensure_base_admin(
         self,
@@ -101,9 +111,20 @@ class AuthService:
         if existing_user is not None:
             return existing_user
 
-        return self.repository.create(
-            email=email,
-            full_name=full_name,
-            hashed_password=hash_password(password),
-            role=UserRole.ADMIN,
-        )
+        try:
+            admin = self.repository.create(
+                email=email,
+                full_name=full_name,
+                hashed_password=hash_password(password),
+                role=UserRole.ADMIN,
+            )
+            self.repository.commit()
+        except IntegrityError:
+            # Another worker seeded the admin concurrently.
+            self.repository.rollback()
+            existing_user = self.repository.get_by_email(email)
+            if existing_user is None:
+                raise
+            return existing_user
+
+        return admin

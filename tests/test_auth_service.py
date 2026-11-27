@@ -2,7 +2,10 @@ from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError
 
+from app.core import seed
+from app.core.config import Settings
 from app.core.security import decode_access_token, hash_password
 from app.modules.auth.enums import UserRole
 from app.modules.auth.exceptions import (
@@ -23,6 +26,12 @@ from app.modules.notifications.service import NotificationService
 class FakeEmailNotificationRepository:
     def __init__(self) -> None:
         self.items: list[EmailNotification] = []
+
+    def commit(self) -> None:
+        pass
+
+    def rollback(self) -> None:
+        pass
 
     def create(
         self,
@@ -58,6 +67,12 @@ class FakeUserRepository:
         self.user = user
         self.created_role: UserRole | None = None
         self.create_calls = 0
+
+    def commit(self) -> None:
+        pass
+
+    def rollback(self) -> None:
+        pass
 
     def get_by_email(self, email: str) -> User | None:
         if self.user is not None and self.user.email == email:
@@ -305,3 +320,76 @@ def test_role_change_raises_when_user_does_not_exist() -> None:
             target_user_id="01K4SRY37DGE7K5YWWKNB0RESW",
             new_role=UserRole.DOCTOR,
         )
+
+
+class RacingUserRepository(FakeUserRepository):
+    """Simulates another worker inserting the same email between check and insert."""
+
+    def __init__(self, winner: User) -> None:
+        super().__init__()
+        self.winner = winner
+        self.rolled_back = False
+
+    def create(self, **kwargs: object) -> User:
+        self.user = self.winner
+        raise IntegrityError("INSERT", {}, Exception("duplicate email"))
+
+    def rollback(self) -> None:
+        self.rolled_back = True
+
+
+def test_ensure_base_admin_returns_existing_admin_on_concurrent_insert() -> None:
+    winner = make_user(UserRole.ADMIN)
+    repository = RacingUserRepository(winner)
+    service = AuthService(repository)
+
+    admin = service.ensure_base_admin(
+        email=winner.email,
+        full_name="Clinic Administrator",
+        password="Admin123!",
+    )
+
+    assert admin is winner
+    assert repository.rolled_back
+
+
+def test_register_maps_concurrent_duplicate_email_to_domain_error() -> None:
+    winner = make_user(UserRole.PATIENT)
+    repository = RacingUserRepository(winner)
+    service = AuthService(repository)
+
+    with pytest.raises(EmailAlreadyRegisteredError):
+        service.register(
+            UserCreate(
+                email=winner.email,
+                full_name="Dr. Example",
+                password="password123",
+            )
+        )
+    assert repository.rolled_back
+
+
+def test_seed_admin_defaults_apply_only_in_local_environment() -> None:
+    local = Settings(_env_file=None, app_env="development")
+    production = Settings(_env_file=None, app_env="production")
+    explicit = Settings(
+        _env_file=None,
+        app_env="production",
+        seed_admin_email="root@clinic.com",
+        seed_admin_password="S3cure-pass",
+    )
+
+    assert (local.seed_admin_email, local.seed_admin_password) == (
+        "admin@clinic.com",
+        "Admin123!",
+    )
+    assert production.seed_admin_email is None
+    assert production.seed_admin_password is None
+    assert explicit.seed_admin_email == "root@clinic.com"
+
+
+def test_seed_is_skipped_without_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(seed.settings, "seed_admin_email", None)
+    monkeypatch.setattr(seed.settings, "seed_admin_password", None)
+
+    assert seed.ensure_base_admin(db=None) is None  # type: ignore[arg-type]

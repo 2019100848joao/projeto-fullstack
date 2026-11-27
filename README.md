@@ -51,7 +51,7 @@ Start Postgres:
 docker compose up -d database
 ```
 
-Migrations and the base `admin` seed (`SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`) run automatically when the app starts. To run migrations manually:
+Migrations and the base `admin` seed run automatically when the app starts. With `APP_ENV=development` the seed uses local defaults (`admin@clinic.com` / `Admin123!`); in any other environment `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD` must be set, otherwise the seed is skipped. To run migrations manually:
 
 ```bash
 python -c "from app.core.migrations import run_migrations; run_migrations()"

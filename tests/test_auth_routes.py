@@ -81,17 +81,14 @@ def override_auth_service() -> FakeAuthService:
 def test_register_returns_201_for_patient() -> None:
     app.dependency_overrides[get_auth_service] = override_auth_service
 
-    try:
-        response = TestClient(app).post(
-            "/auth/register",
-            json={
-                "email": "patient@example.com",
-                "full_name": "Patient Example",
-                "password": "password123",
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).post(
+        "/auth/register",
+        json={
+            "email": "patient@example.com",
+            "full_name": "Patient Example",
+            "password": "password123",
+        },
+    )
 
     assert response.status_code == 201
     assert response.json()["role"] == "patient"
@@ -101,18 +98,15 @@ def test_register_returns_201_for_patient() -> None:
 def test_register_rejects_non_patient_roles(role: str) -> None:
     app.dependency_overrides[get_auth_service] = override_auth_service
 
-    try:
-        response = TestClient(app).post(
-            "/auth/register",
-            json={
-                "email": "user@example.com",
-                "full_name": "Example",
-                "password": "password123",
-                "role": role,
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).post(
+        "/auth/register",
+        json={
+            "email": "user@example.com",
+            "full_name": "Example",
+            "password": "password123",
+            "role": role,
+        },
+    )
 
     assert response.status_code == 422
 
@@ -122,17 +116,14 @@ def test_register_returns_409_when_email_exists() -> None:
         error=EmailAlreadyRegisteredError()
     )
 
-    try:
-        response = TestClient(app).post(
-            "/auth/register",
-            json={
-                "email": "patient@example.com",
-                "full_name": "Patient Example",
-                "password": "password123",
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).post(
+        "/auth/register",
+        json={
+            "email": "patient@example.com",
+            "full_name": "Patient Example",
+            "password": "password123",
+        },
+    )
 
     assert response.status_code == 409
 
@@ -142,13 +133,10 @@ def test_login_returns_401_on_invalid_credentials() -> None:
         error=InvalidCredentialsError()
     )
 
-    try:
-        response = TestClient(app).post(
-            "/auth/login",
-            json={"email": "user@example.com", "password": "wrong-password"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).post(
+        "/auth/login",
+        json={"email": "user@example.com", "password": "wrong-password"},
+    )
 
     assert response.status_code == 401
 
@@ -158,13 +146,10 @@ def test_login_returns_403_when_user_is_inactive() -> None:
         error=InactiveUserError()
     )
 
-    try:
-        response = TestClient(app).post(
-            "/auth/login",
-            json={"email": "user@example.com", "password": "password123"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).post(
+        "/auth/login",
+        json={"email": "user@example.com", "password": "password123"},
+    )
 
     assert response.status_code == 403
 
@@ -174,10 +159,7 @@ def test_admin_can_list_users_filtered_by_role() -> None:
     app.dependency_overrides[get_current_user] = lambda: make_user(UserRole.ADMIN)
     app.dependency_overrides[get_auth_service] = lambda: service
 
-    try:
-        response = TestClient(app).get("/auth/users?role=patient")
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).get("/auth/users?role=patient")
 
     assert response.status_code == 200
     assert service.role_filter == UserRole.PATIENT
@@ -192,10 +174,7 @@ def test_non_admin_cannot_list_users(role: UserRole) -> None:
     app.dependency_overrides[get_current_user] = lambda: make_user(role)
     app.dependency_overrides[get_auth_service] = override_auth_service
 
-    try:
-        response = TestClient(app).get("/auth/users")
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).get("/auth/users")
 
     assert response.status_code == 403
 
@@ -210,13 +189,10 @@ def test_update_user_role_returns_200() -> None:
     app.dependency_overrides[get_current_user] = lambda: make_user(UserRole.ADMIN)
     app.dependency_overrides[get_auth_service] = override_auth_service
 
-    try:
-        response = TestClient(app).patch(
-            "/auth/users/01K4SRY37DGE7K5YWWKNB0RESW/role",
-            json={"role": "doctor"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).patch(
+        "/auth/users/01K4SRY37DGE7K5YWWKNB0RESW/role",
+        json={"role": "doctor"},
+    )
 
     assert response.status_code == 200
     assert response.json()["role"] == "doctor"
@@ -228,13 +204,10 @@ def test_update_user_role_returns_404_when_user_not_found() -> None:
         error=UserNotFoundError()
     )
 
-    try:
-        response = TestClient(app).patch(
-            "/auth/users/01K4SRY37DGE7K5YWWKNB0RESW/role",
-            json={"role": "doctor"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).patch(
+        "/auth/users/01K4SRY37DGE7K5YWWKNB0RESW/role",
+        json={"role": "doctor"},
+    )
 
     assert response.status_code == 404
 
@@ -245,12 +218,9 @@ def test_update_user_role_returns_403_when_not_allowed() -> None:
         error=RoleChangeNotAllowedError()
     )
 
-    try:
-        response = TestClient(app).patch(
-            "/auth/users/01K4SRY37DGE7K5YWWKNB0RESW/role",
-            json={"role": "doctor"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).patch(
+        "/auth/users/01K4SRY37DGE7K5YWWKNB0RESW/role",
+        json={"role": "doctor"},
+    )
 
     assert response.status_code == 403

@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+from sqlalchemy.exc import IntegrityError
+
 from app.modules.auth.enums import UserRole
 from app.modules.auth.exceptions import UserNotFoundError
 from app.modules.auth.models import User
@@ -16,6 +18,11 @@ from app.modules.role_transitions.exceptions import (
 from app.modules.role_transitions.models import RoleTransitionRequest
 from app.modules.role_transitions.repository import RoleTransitionRepository
 from app.modules.role_transitions.schemas import RoleTransitionCreate
+
+
+def _ensure_transition_allowed(*, current_role: str, requested_role: str) -> None:
+    if current_role in (UserRole.ADMIN.value, requested_role):
+        raise InvalidRoleTransitionError
 
 
 class RoleTransitionService:
@@ -36,19 +43,19 @@ class RoleTransitionService:
         current_user: User,
         payload: RoleTransitionCreate,
     ) -> RoleTransitionRequest:
-        if (
-            current_user.role == UserRole.ADMIN.value
-            or current_user.role == payload.requested_role.value
-        ):
-            raise InvalidRoleTransitionError
-
-        if self.repository.get_pending_by_user_id(current_user.id) is not None:
-            raise PendingRoleTransitionExistsError
-
-        transition_request = self.repository.create(
-            user_id=current_user.id,
-            requested_role=payload.requested_role,
+        _ensure_transition_allowed(
+            current_role=current_user.role,
+            requested_role=payload.requested_role.value,
         )
+
+        try:
+            transition_request = self.repository.create(
+                user_id=current_user.id,
+                requested_role=payload.requested_role,
+            )
+        except IntegrityError as exc:
+            self.repository.rollback()
+            raise PendingRoleTransitionExistsError from exc
 
         admins = self.user_repository.list_all(role=UserRole.ADMIN)
         admin_emails = [admin.email for admin in admins if admin.is_active]
@@ -60,6 +67,7 @@ class RoleTransitionService:
             admin_emails=admin_emails,
         )
 
+        self.repository.commit()
         return transition_request
 
     def list_requests(
@@ -103,7 +111,8 @@ class RoleTransitionService:
         if admin_user.role != UserRole.ADMIN.value:
             raise RoleTransitionPermissionError
 
-        transition_request = self.repository.get_by_id(request_id)
+        # Row lock: a concurrent review waits here and then sees the new status.
+        transition_request = self.repository.get_by_id(request_id, for_update=True)
         if transition_request is None:
             raise RoleTransitionNotFoundError
 
@@ -114,6 +123,17 @@ class RoleTransitionService:
         if target_user is None:
             raise UserNotFoundError
 
+        if approve:
+            # The user's role may have changed since the request was created.
+            _ensure_transition_allowed(
+                current_role=target_user.role,
+                requested_role=transition_request.requested_role,
+            )
+            self.user_repository.update_role(
+                target_user,
+                UserRole(transition_request.requested_role),
+            )
+
         transition_request.status = (
             TransitionStatus.APPROVED.value
             if approve
@@ -122,14 +142,6 @@ class RoleTransitionService:
         transition_request.reviewed_by_id = admin_user.id
         transition_request.reviewed_at = datetime.now(UTC)
 
-        if approve:
-            self.user_repository.update_role(
-                target_user,
-                UserRole(transition_request.requested_role),
-            )
-
-        saved_request = self.repository.save(transition_request)
-
         self.notification_service.record_transition_decision_email(
             recipient_email=target_user.email,
             full_name=target_user.full_name,
@@ -137,4 +149,5 @@ class RoleTransitionService:
             approved=approve,
         )
 
-        return saved_request
+        self.repository.commit()
+        return transition_request

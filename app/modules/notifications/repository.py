@@ -1,14 +1,11 @@
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
+from app.core.database import SqlRepository
 from app.modules.notifications.enums import EmailEventType
 from app.modules.notifications.models import EmailNotification
 
 
-class EmailNotificationRepository:
-    def __init__(self, db: Session) -> None:
-        self.db = db
-
+class EmailNotificationRepository(SqlRepository):
     def create(
         self,
         *,
@@ -24,8 +21,7 @@ class EmailNotificationRepository:
             event_type=event_type.value,
         )
         self.db.add(notification)
-        self.db.commit()
-        self.db.refresh(notification)
+        self.db.flush()
         return notification
 
     def list_all(

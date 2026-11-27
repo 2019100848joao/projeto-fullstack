@@ -128,13 +128,10 @@ def test_request_role_transition_returns_201() -> None:
         override_role_transition_service
     )
 
-    try:
-        response = TestClient(app).post(
-            "/role-transitions",
-            json={"requested_role": "doctor"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).post(
+        "/role-transitions",
+        json={"requested_role": "doctor"},
+    )
 
     assert response.status_code == 201
     assert response.json()["status"] == "pending"
@@ -149,13 +146,10 @@ def test_request_role_transition_rejects_disallowed_target_role(
         override_role_transition_service
     )
 
-    try:
-        response = TestClient(app).post(
-            "/role-transitions",
-            json={"requested_role": invalid_role},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).post(
+        "/role-transitions",
+        json={"requested_role": invalid_role},
+    )
 
     assert response.status_code == 422
 
@@ -166,13 +160,10 @@ def test_request_role_transition_returns_400_when_invalid() -> None:
         FakeRoleTransitionService(error=InvalidRoleTransitionError())
     )
 
-    try:
-        response = TestClient(app).post(
-            "/role-transitions",
-            json={"requested_role": "doctor"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).post(
+        "/role-transitions",
+        json={"requested_role": "doctor"},
+    )
 
     assert response.status_code == 400
 
@@ -183,13 +174,10 @@ def test_request_role_transition_returns_409_when_pending_exists() -> None:
         FakeRoleTransitionService(error=PendingRoleTransitionExistsError())
     )
 
-    try:
-        response = TestClient(app).post(
-            "/role-transitions",
-            json={"requested_role": "doctor"},
-        )
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).post(
+        "/role-transitions",
+        json={"requested_role": "doctor"},
+    )
 
     assert response.status_code == 409
 
@@ -235,10 +223,7 @@ def test_admin_only_role_transition_routes_forbid_non_admins(
         override_role_transition_service
     )
 
-    try:
-        response = TestClient(app).request(method, path)
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).request(method, path)
 
     assert response.status_code == 403
 
@@ -250,10 +235,7 @@ def test_admin_can_list_role_transitions_by_status() -> None:
     )
     app.dependency_overrides[get_role_transition_service] = lambda: service
 
-    try:
-        response = TestClient(app).get("/role-transitions?status=pending")
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).get("/role-transitions?status=pending")
 
     assert response.status_code == 200
     assert service.status_filter == TransitionStatus.PENDING
@@ -267,10 +249,7 @@ def test_admin_can_approve_role_transition() -> None:
         override_role_transition_service
     )
 
-    try:
-        response = TestClient(app).post(f"/role-transitions/{REQUEST_ID}/approve")
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).post(f"/role-transitions/{REQUEST_ID}/approve")
 
     assert response.status_code == 200
     assert response.json()["status"] == "approved"
@@ -284,10 +263,7 @@ def test_admin_can_reject_role_transition() -> None:
         override_role_transition_service
     )
 
-    try:
-        response = TestClient(app).post(f"/role-transitions/{REQUEST_ID}/reject")
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).post(f"/role-transitions/{REQUEST_ID}/reject")
 
     assert response.status_code == 200
     assert response.json()["status"] == "rejected"
@@ -301,10 +277,7 @@ def test_review_role_transition_returns_404_when_not_found() -> None:
         FakeRoleTransitionService(error=RoleTransitionNotFoundError())
     )
 
-    try:
-        response = TestClient(app).post(f"/role-transitions/{REQUEST_ID}/approve")
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).post(f"/role-transitions/{REQUEST_ID}/approve")
 
     assert response.status_code == 404
 
@@ -317,12 +290,23 @@ def test_review_role_transition_returns_409_when_already_reviewed() -> None:
         FakeRoleTransitionService(error=RoleTransitionAlreadyReviewedError())
     )
 
-    try:
-        response = TestClient(app).post(f"/role-transitions/{REQUEST_ID}/approve")
-    finally:
-        app.dependency_overrides.clear()
+    response = TestClient(app).post(f"/role-transitions/{REQUEST_ID}/approve")
 
     assert response.status_code == 409
+
+
+def test_approve_returns_409_when_transition_is_no_longer_valid() -> None:
+    app.dependency_overrides[get_current_user] = lambda: make_user(
+        UserRole.ADMIN, ADMIN_ID
+    )
+    app.dependency_overrides[get_role_transition_service] = lambda: (
+        FakeRoleTransitionService(error=InvalidRoleTransitionError())
+    )
+
+    response = TestClient(app).post(f"/role-transitions/{REQUEST_ID}/approve")
+
+    assert response.status_code == 409
+    assert "no longer valid" in response.json()["detail"]
 
 
 def test_end_to_end_transition_flow_updates_role_and_records_emails() -> None:
@@ -345,45 +329,42 @@ def test_end_to_end_transition_flow_updates_role_and_records_emails() -> None:
         ensure_base_admin(db)
 
     app.dependency_overrides[get_db] = override_get_db
-    try:
-        client = TestClient(app)
-        client.post(
-            "/auth/register",
-            json={
-                "email": "maria@example.com",
-                "full_name": "Maria Silva",
-                "password": "password123",
-            },
-        )
-        patient_token = client.post(
-            "/auth/login",
-            json={"email": "maria@example.com", "password": "password123"},
-        ).json()["access_token"]
-        admin_token = client.post(
-            "/auth/login",
-            json={"email": "admin@clinic.com", "password": "Admin123!"},
-        ).json()["access_token"]
+    client = TestClient(app)
+    client.post(
+        "/auth/register",
+        json={
+            "email": "maria@example.com",
+            "full_name": "Maria Silva",
+            "password": "password123",
+        },
+    )
+    patient_token = client.post(
+        "/auth/login",
+        json={"email": "maria@example.com", "password": "password123"},
+    ).json()["access_token"]
+    admin_token = client.post(
+        "/auth/login",
+        json={"email": "admin@clinic.com", "password": "Admin123!"},
+    ).json()["access_token"]
 
-        created = client.post(
-            "/role-transitions",
-            headers={"Authorization": f"Bearer {patient_token}"},
-            json={"requested_role": "doctor"},
-        ).json()
-        client.post(
-            f"/role-transitions/{created['id']}/approve",
-            headers={"Authorization": f"Bearer {admin_token}"},
-        )
+    created = client.post(
+        "/role-transitions",
+        headers={"Authorization": f"Bearer {patient_token}"},
+        json={"requested_role": "doctor"},
+    ).json()
+    client.post(
+        f"/role-transitions/{created['id']}/approve",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
 
-        me = client.get(
-            "/auth/me",
-            headers={"Authorization": f"Bearer {patient_token}"},
-        ).json()
-        emails = client.get(
-            "/notifications/emails",
-            headers={"Authorization": f"Bearer {admin_token}"},
-        ).json()
-    finally:
-        app.dependency_overrides.clear()
+    me = client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {patient_token}"},
+    ).json()
+    emails = client.get(
+        "/notifications/emails",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ).json()
 
     assert me["role"] == "doctor"
     assert {item["event_type"] for item in emails} == {

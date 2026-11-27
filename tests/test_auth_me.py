@@ -25,11 +25,8 @@ def override_current_user() -> User:
 def test_me_returns_current_user() -> None:
     app.dependency_overrides[get_current_user] = override_current_user
 
-    try:
-        client = TestClient(app)
-        response = client.get("/auth/me")
-    finally:
-        app.dependency_overrides.clear()
+    client = TestClient(app)
+    response = client.get("/auth/me")
 
     assert response.status_code == 200
     assert response.json() == {

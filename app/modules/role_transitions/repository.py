@@ -1,6 +1,6 @@
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
+from app.core.database import SqlRepository
 from app.modules.role_transitions.enums import (
     TransitionStatus,
     TransitionTargetRole,
@@ -8,35 +8,34 @@ from app.modules.role_transitions.enums import (
 from app.modules.role_transitions.models import RoleTransitionRequest
 
 
-class RoleTransitionRepository:
-    def __init__(self, db: Session) -> None:
-        self.db = db
-
+class RoleTransitionRepository(SqlRepository):
     def create(
         self,
         *,
         user_id: str,
         requested_role: TransitionTargetRole,
     ) -> RoleTransitionRequest:
+        """Raises ``IntegrityError`` if the user already has a pending request."""
         transition_request = RoleTransitionRequest(
             user_id=user_id,
             requested_role=requested_role.value,
             status=TransitionStatus.PENDING.value,
         )
         self.db.add(transition_request)
-        self.db.commit()
-        self.db.refresh(transition_request)
+        self.db.flush()
         return transition_request
 
-    def get_by_id(self, request_id: str) -> RoleTransitionRequest | None:
-        return self.db.get(RoleTransitionRequest, request_id)
-
-    def get_pending_by_user_id(self, user_id: str) -> RoleTransitionRequest | None:
-        statement = select(RoleTransitionRequest).where(
-            RoleTransitionRequest.user_id == user_id,
-            RoleTransitionRequest.status == TransitionStatus.PENDING.value,
+    def get_by_id(
+        self,
+        request_id: str,
+        *,
+        for_update: bool = False,
+    ) -> RoleTransitionRequest | None:
+        return self.db.get(
+            RoleTransitionRequest,
+            request_id,
+            with_for_update=for_update,
         )
-        return self.db.scalar(statement)
 
     def list_all(
         self,
@@ -49,11 +48,3 @@ class RoleTransitionRepository:
         if status is not None:
             statement = statement.where(RoleTransitionRequest.status == status.value)
         return list(self.db.scalars(statement))
-
-    def save(
-        self,
-        transition_request: RoleTransitionRequest,
-    ) -> RoleTransitionRequest:
-        self.db.commit()
-        self.db.refresh(transition_request)
-        return transition_request
