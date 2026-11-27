@@ -43,9 +43,32 @@ make run
 make check
 ```
 
+## Docker
+
+`docker-compose.yml` runs two services on a Docker network named `clinic`:
+
+| Service | Container | Host port | Notes |
+|---|---|---|---|
+| `database` | `clinic_database` | `127.0.0.1:${DB_PORT:-5432}` | Postgres 17, data in the `postgres_data` volume |
+| `api` | `clinic_api` | `127.0.0.1:${API_PORT:-8000}` | Built from the `Dockerfile`, runs as a non-root user, applies migrations on startup |
+
+```bash
+make up        # docker compose up -d --build
+make logs      # API logs
+make down
+```
+
+- `SECRET_KEY` is required and read from `.env` (compose fails fast without it).
+- Inside the network the API reaches the database as `database:5432`; the
+  `DATABASE_URL` in `.env` (for `localhost`) is only used when running outside Docker.
+- Ports are bound to `127.0.0.1` only. Change them with `DB_PORT` / `API_PORT` if
+  they are in use, e.g. `API_PORT=8001 make up`.
+- The frontend container joins the same `clinic` network and proxies `/api` to
+  `http://clinic_api:8000` (see the frontend README), so the browser needs no CORS.
+
 ## Database
 
-Start Postgres:
+To run only Postgres (and the API with `make run`):
 
 ```bash
 docker compose up -d database
@@ -68,6 +91,7 @@ python -c "from app.core.migrations import run_migrations; run_migrations()"
 - `GET /users?role=patient|doctor|attendant|admin` lists users for `admin`, `doctor` and `attendant`, without their documents.
 - `POST /users/me/documents` accepts a nonempty array of documents for the authenticated user (one per type) and returns the created documents. The same value can be used by different users.
 - `GET /document-types` lists available document types without authentication.
+  Migration `009_seed_document_types` loads the basic types, `CPF` and `RG`.
 - `POST /document-types` creates a document type for administrators.
 - `PATCH /auth/{user_id}/role` changes a user role when the authenticated user has permission.
 - `POST /appointments`, `GET /appointments`, `POST /appointments/{id}/reschedule` and `POST /appointments/{id}/cancel` let an attendant schedule, list, reschedule and cancel appointments. Patient and doctor must be active users with those roles, and the database rejects two active appointments for the same doctor at the same time. Appointments start on a 30-minute grid (`:00` or `:30`) and must be in the future.
