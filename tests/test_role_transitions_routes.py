@@ -15,7 +15,6 @@ from app.core.seed import ensure_base_admin
 from app.main import app
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.enums import UserRole
-from app.modules.auth.models import User
 from app.modules.role_transitions.dependencies import get_role_transition_service
 from app.modules.role_transitions.enums import TransitionStatus
 from app.modules.role_transitions.exceptions import (
@@ -26,6 +25,7 @@ from app.modules.role_transitions.exceptions import (
 )
 from app.modules.role_transitions.models import RoleTransitionRequest
 from app.modules.role_transitions.schemas import RoleTransitionCreate
+from app.modules.users.models import User
 
 REQUEST_ID = "01K4SRY37DGE7K5YWWKNB0REQ1"
 USER_ID = "01K4SRY37DGE7K5YWWKNB0RESW"

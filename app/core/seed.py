@@ -4,9 +4,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import SessionLocal
-from app.modules.auth.models import User
-from app.modules.auth.repository import UserRepository
 from app.modules.auth.service import AuthService
+from app.modules.users.models import User
+from app.modules.users.repository import UserRepository
 
 logger = logging.getLogger(__name__)
 

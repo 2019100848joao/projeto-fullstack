@@ -11,7 +11,7 @@ from app.modules.role_transitions.enums import TransitionStatus
 class RoleTransitionRequest(Base):
     __tablename__ = "role_transition_requests"
     __table_args__ = (
-        # Mirrors migration 005: at most one pending request per user.
+        # Mirrors migration 012: at most one pending request per user.
         Index(
             "ux_role_transition_requests_user_pending",
             "user_id",

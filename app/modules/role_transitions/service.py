@@ -4,8 +4,6 @@ from sqlalchemy.exc import IntegrityError
 
 from app.modules.auth.enums import UserRole
 from app.modules.auth.exceptions import UserNotFoundError
-from app.modules.auth.models import User
-from app.modules.auth.repository import UserRepository
 from app.modules.notifications.service import NotificationService
 from app.modules.role_transitions.enums import TransitionStatus
 from app.modules.role_transitions.exceptions import (
@@ -18,6 +16,8 @@ from app.modules.role_transitions.exceptions import (
 from app.modules.role_transitions.models import RoleTransitionRequest
 from app.modules.role_transitions.repository import RoleTransitionRepository
 from app.modules.role_transitions.schemas import RoleTransitionCreate
+from app.modules.users.models import User
+from app.modules.users.repository import UserRepository
 
 
 def _ensure_transition_allowed(*, current_role: str, requested_role: str) -> None:
@@ -129,10 +129,7 @@ class RoleTransitionService:
                 current_role=target_user.role,
                 requested_role=transition_request.requested_role,
             )
-            self.user_repository.update_role(
-                target_user,
-                UserRole(transition_request.requested_role),
-            )
+            target_user.role = transition_request.requested_role
 
         transition_request.status = (
             TransitionStatus.APPROVED.value

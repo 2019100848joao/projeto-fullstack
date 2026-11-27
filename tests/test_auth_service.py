@@ -15,12 +15,19 @@ from app.modules.auth.exceptions import (
     RoleChangeNotAllowedError,
     UserNotFoundError,
 )
-from app.modules.auth.models import User
 from app.modules.auth.schemas import RegistrationRole, UserCreate
 from app.modules.auth.service import AuthService
+from app.modules.document_types.models import DocumentType
 from app.modules.notifications.enums import EmailEventType
 from app.modules.notifications.models import EmailNotification
 from app.modules.notifications.service import NotificationService
+from app.modules.users.exceptions import (
+    DocumentAlreadyExistsError,
+    DocumentTypeNotFoundError,
+)
+from app.modules.users.models import User, UserDocument
+from app.modules.users.schemas import UserDocumentCreate
+from app.modules.users.service import UserService
 
 
 class FakeEmailNotificationRepository:
@@ -63,35 +70,33 @@ class FakeEmailNotificationRepository:
 
 
 class FakeUserRepository:
-    def __init__(self, user: User | None = None) -> None:
+    def __init__(
+        self,
+        user: User | None = None,
+        doc_type: DocumentType | None = None,
+        user_document: UserDocument | None = None,
+    ) -> None:
         self.user = user
+        self.doc_type = doc_type
+        self.user_document = user_document
         self.created_role: UserRole | None = None
         self.create_calls = 0
+
+    def get_by_email(self, email: str) -> User | None:
+        return self.user
+
+    def get_by_id(self, user_id: str) -> User | None:
+        return self.user
+
+    def list_all(self, *, role: UserRole | None = None) -> list[User]:
+        self.listed_role = role
+        return [] if self.user is None else [self.user]
 
     def commit(self) -> None:
         pass
 
     def rollback(self) -> None:
         pass
-
-    def get_by_email(self, email: str) -> User | None:
-        if self.user is not None and self.user.email == email:
-            return self.user
-        return None
-
-    def get_by_id(self, user_id: str) -> User | None:
-        return self.user
-
-    def list_all(self, *, role: UserRole | None = None) -> list[User]:
-        if self.user is None:
-            return []
-        if role is not None and self.user.role != role.value:
-            return []
-        return [self.user]
-
-    def update_role(self, user: User, role: UserRole) -> User:
-        user.role = role.value
-        return user
 
     def create(
         self,
@@ -107,6 +112,7 @@ class FakeUserRepository:
             id="01K4SRY37DGE7K5YWWKNB0RESW",
             email=email,
             full_name=full_name,
+            documents=[],
             hashed_password=hashed_password,
             role=role.value,
             is_active=True,
@@ -114,17 +120,36 @@ class FakeUserRepository:
         )
         return self.user
 
+    def get_document_type_by_id(self, type_id: str) -> DocumentType | None:
+        if self.doc_type is not None and self.doc_type.id == type_id:
+            return self.doc_type
+        return None
 
-def make_user(role: UserRole) -> User:
-    return User(
-        id="01K4SRY37DGE7K5YWWKNB0RESW",
-        email="doctor@example.com",
-        full_name="Dr. Example",
-        hashed_password=hash_password("password123"),
-        role=role.value,
-        is_active=True,
-        created_at=datetime(2026, 9, 9, tzinfo=UTC),
-    )
+    def get_document_by_user_and_type(
+        self, user_id: str, type_id: str
+    ) -> UserDocument | None:
+        if self.user_document is not None and self.user_document.type_id == type_id:
+            return self.user_document
+        return None
+
+    def create_user_documents(
+        self,
+        *,
+        user_id: str,
+        documents: list[tuple[str, str]],
+    ) -> list[UserDocument]:
+        created = [
+            UserDocument(
+                id="01K4SRY37DGE7K5YWWKNB0DOC1",
+                user_id=user_id,
+                type_id=type_id,
+                value=value,
+            )
+            for type_id, value in documents
+        ]
+        if created:
+            self.user_document = created[-1]
+        return created
 
 
 def test_register_raises_domain_error_when_email_exists() -> None:
@@ -134,6 +159,7 @@ def test_register_raises_domain_error_when_email_exists() -> None:
                 id="01K4SRY37DGE7K5YWWKNB0RESW",
                 email="doctor@example.com",
                 full_name="Dr. Example",
+                documents=[],
                 hashed_password="hashed",
                 role="doctor",
                 is_active=True,
@@ -217,6 +243,89 @@ def test_login_returns_valid_access_token() -> None:
     assert payload["sub"] == user.id
 
 
+def test_create_user_document_with_unknown_type_raises_error() -> None:
+    service = UserService(FakeUserRepository())
+
+    with pytest.raises(DocumentTypeNotFoundError):
+        service.create_user_documents(
+            current_user=make_user(UserRole.PATIENT),
+            doc_creates=[
+                UserDocumentCreate(
+                    type_id="01K4SRY37DGE7K5YWWKNB0TYPE",
+                    value="123.456.789-00",
+                )
+            ],
+        )
+
+
+def test_create_user_document_links_to_current_user() -> None:
+    doc_type = DocumentType(id="01K4SRY37DGE7K5YWWKNB0TYPE", type="CPF")
+    service = UserService(FakeUserRepository(doc_type=doc_type))
+    current_user = make_user(UserRole.PATIENT)
+
+    docs = service.create_user_documents(
+        current_user=current_user,
+        doc_creates=[
+            UserDocumentCreate(
+                type_id="01K4SRY37DGE7K5YWWKNB0TYPE",
+                value="123.456.789-00",
+            )
+        ],
+    )
+
+    assert len(docs) == 1
+    doc = docs[0]
+    assert doc.user_id == current_user.id
+    assert doc.type_id == "01K4SRY37DGE7K5YWWKNB0TYPE"
+    assert doc.value == "123.456.789-00"
+
+
+def test_create_user_document_raises_when_already_exists() -> None:
+    existing_doc = UserDocument(
+        id="01K4SRY37DGE7K5YWWKNB0DOC1",
+        user_id="01K4SRY37DGE7K5YWWKNB0RESW",
+        type_id="01K4SRY37DGE7K5YWWKNB0TYPE",
+        value="123.456.789-00",
+    )
+    service = UserService(FakeUserRepository(user_document=existing_doc))
+
+    with pytest.raises(DocumentAlreadyExistsError):
+        service.create_user_documents(
+            current_user=make_user(UserRole.PATIENT, document=existing_doc),
+            doc_creates=[
+                UserDocumentCreate(
+                    type_id="01K4SRY37DGE7K5YWWKNB0TYPE",
+                    value="999.999.999-99",
+                )
+            ],
+        )
+
+
+def test_create_user_document_allows_another_type() -> None:
+    existing_doc = UserDocument(
+        id="01K4SRY37DGE7K5YWWKNB0DOC1",
+        user_id="01K4SRY37DGE7K5YWWKNB0RESW",
+        type_id="01K4SRY37DGE7K5YWWKNB0TYPE",
+        value="123.456.789-00",
+    )
+    new_type = DocumentType(id="01K4SRY37DGE7K5YWWKNB0TYP2", type="CRM")
+    service = UserService(
+        FakeUserRepository(doc_type=new_type, user_document=existing_doc)
+    )
+
+    created = service.create_user_documents(
+        current_user=make_user(UserRole.PATIENT, document=existing_doc),
+        doc_creates=[
+            UserDocumentCreate(
+                type_id=new_type.id,
+                value="CRM-123456",
+            )
+        ],
+    )
+
+    assert created[0].type_id == new_type.id
+
+
 def test_login_raises_domain_error_when_credentials_are_invalid() -> None:
     service = AuthService(FakeUserRepository())
 
@@ -231,6 +340,7 @@ def test_login_raises_domain_error_when_user_is_inactive() -> None:
                 id="01K4SRY37DGE7K5YWWKNB0RESW",
                 email="doctor@example.com",
                 full_name="Dr. Example",
+                documents=[],
                 hashed_password=hash_password("password123"),
                 role="doctor",
                 is_active=False,
@@ -244,10 +354,12 @@ def test_login_raises_domain_error_when_user_is_inactive() -> None:
 
 
 def test_list_users_filters_by_role() -> None:
-    service = AuthService(FakeUserRepository(make_user(UserRole.PATIENT)))
+    repository = FakeUserRepository(make_user(UserRole.DOCTOR))
 
-    assert len(service.list_users(role=UserRole.PATIENT)) == 1
-    assert service.list_users(role=UserRole.DOCTOR) == []
+    users = UserService(repository).list_users(role=UserRole.DOCTOR)
+
+    assert repository.listed_role == UserRole.DOCTOR
+    assert [user.role for user in users] == ["doctor"]
 
 
 def test_admin_can_change_any_user_role() -> None:
@@ -320,6 +432,41 @@ def test_role_change_raises_when_user_does_not_exist() -> None:
             target_user_id="01K4SRY37DGE7K5YWWKNB0RESW",
             new_role=UserRole.DOCTOR,
         )
+
+
+def test_user_can_hold_single_document() -> None:
+    doc_type = DocumentType(
+        id="01K4SRY37DGE7K5YWWKNB0TYPE",
+        type="CPF",
+    )
+    user_doc = UserDocument(
+        id="01K4SRY37DGE7K5YWWKNB0DOC1",
+        user_id="01K4SRY37DGE7K5YWWKNB0RESW",
+        value="123.456.789-00",
+        type_id=doc_type.id,
+    )
+    user = make_user(UserRole.PATIENT, document=user_doc)
+
+    assert len(user.documents) == 1
+    assert user.documents[0].id == "01K4SRY37DGE7K5YWWKNB0DOC1"
+    assert user.documents[0].value == "123.456.789-00"
+    assert user.documents[0].type_id == doc_type.id
+
+
+def make_user(
+    role: UserRole,
+    document: UserDocument | None = None,
+) -> User:
+    return User(
+        id="01K4SRY37DGE7K5YWWKNB0RESW",
+        email="doctor@example.com",
+        full_name="Dr. Example",
+        documents=[document] if document is not None else [],
+        hashed_password=hash_password("password123"),
+        role=role.value,
+        is_active=True,
+        created_at=datetime(2026, 9, 9, tzinfo=UTC),
+    )
 
 
 class RacingUserRepository(FakeUserRepository):

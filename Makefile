@@ -4,7 +4,7 @@ UVICORN := .venv/bin/uvicorn
 PYTEST := .venv/bin/pytest
 RUFF := .venv/bin/ruff
 
-.PHONY: help setup install run test lint format check db-up db-down db-logs migrate clean
+.PHONY: help setup install run test lint format check db-up db-down db-logs up down logs migrate clean
 
 help:
 	@echo "Available commands:"
@@ -19,6 +19,9 @@ help:
 	@echo "  make db-down   Stop Postgres"
 	@echo "  make db-logs   Follow Postgres logs"
 	@echo "  make migrate   Run SQL migrations"
+	@echo "  make up        Build and start the API and Postgres in Docker"
+	@echo "  make down      Stop the Docker stack"
+	@echo "  make logs      Follow the API container logs"
 	@echo "  make clean     Remove generated cache files"
 
 setup:
@@ -52,6 +55,15 @@ db-down:
 
 db-logs:
 	docker compose logs -f database
+
+up:
+	docker compose up -d --build
+
+down:
+	docker compose down
+
+logs:
+	docker compose logs -f api
 
 migrate:
 	$(PYTHON) -c "from app.core.migrations import run_migrations; run_migrations()"

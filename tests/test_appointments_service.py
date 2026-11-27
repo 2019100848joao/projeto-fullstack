@@ -1,0 +1,533 @@
+from datetime import UTC, date, datetime, timedelta, timezone
+
+import pytest
+from pydantic import ValidationError
+
+from app.modules.appointments.enums import AppointmentStatus, CalendarView
+from app.modules.appointments.exceptions import (
+    AppointmentAccessDeniedError,
+    AppointmentNotFoundError,
+    AppointmentNotScheduledError,
+    AppointmentNotStartedError,
+    CalendarDoctorRequiredError,
+    DoctorUnavailableError,
+    InvalidDoctorError,
+    InvalidPatientError,
+)
+from app.modules.appointments.models import Appointment
+from app.modules.appointments.schemas import (
+    AppointmentCreate,
+    AppointmentReschedule,
+    AttendanceCreate,
+)
+from app.modules.appointments.service import AppointmentService, calendar_period
+from app.modules.auth.enums import UserRole
+from app.modules.users.models import User
+
+# A past appointment, so its attendance can be registered.
+SCHEDULED_AT = datetime(2026, 10, 14, 13, 0, tzinfo=UTC)
+FUTURE_SLOT = datetime(2099, 1, 5, 13, 30, tzinfo=UTC)
+
+
+def make_user(user_id: str, role: UserRole) -> User:
+    return User(
+        id=user_id,
+        email=f"{user_id}@example.com",
+        full_name=user_id,
+        hashed_password="hashed",
+        role=role.value,
+        is_active=True,
+        created_at=datetime(2026, 9, 9, tzinfo=UTC),
+    )
+
+
+def make_appointment(
+    status: AppointmentStatus = AppointmentStatus.SCHEDULED,
+    scheduled_at: datetime = SCHEDULED_AT,
+) -> Appointment:
+    return Appointment(
+        id="appointment",
+        patient_id="patient",
+        doctor_id="doctor",
+        created_by="attendant",
+        scheduled_at=scheduled_at,
+        status=status.value,
+    )
+
+
+class FakeUserRepository:
+    def __init__(self, *users: User) -> None:
+        self.users = {user.id: user for user in users}
+
+    def get_active_by_role(self, user_id: str, role: UserRole) -> User | None:
+        user = self.users.get(user_id)
+        if user is None or user.role != role.value or not user.is_active:
+            return None
+        return user
+
+
+class FakeAppointmentRepository:
+    def __init__(
+        self,
+        appointment: Appointment | None = None,
+        *,
+        conflict: bool = False,
+    ) -> None:
+        self.appointment = appointment
+        self.conflict = conflict
+        self.period: tuple[datetime, datetime] | None = None
+        self.calendar_doctor_id: str | None = None
+        self.exam_names: list[str] | None = None
+
+    def get_by_id(self, appointment_id: str) -> Appointment | None:
+        return self.appointment
+
+    def list_all(
+        self,
+        *,
+        doctor_id: str | None = None,
+        patient_id: str | None = None,
+    ) -> list[Appointment]:
+        self.list_filters = {"doctor_id": doctor_id, "patient_id": patient_id}
+        return [self.appointment] if self.appointment else []
+
+    def list_patients_attended_by(self, doctor_id: str) -> list[tuple[User, datetime]]:
+        self.attended_by = doctor_id
+        return [(make_user("patient", UserRole.PATIENT), SCHEDULED_AT)]
+
+    def doctor_has_conflict(self, **kwargs: object) -> bool:
+        return self.conflict
+
+    def create(
+        self,
+        *,
+        patient_id: str,
+        doctor_id: str,
+        created_by: str,
+        scheduled_at: datetime,
+    ) -> Appointment:
+        return Appointment(
+            id="appointment",
+            patient_id=patient_id,
+            doctor_id=doctor_id,
+            created_by=created_by,
+            scheduled_at=scheduled_at,
+            status=AppointmentStatus.SCHEDULED.value,
+        )
+
+    def reschedule(
+        self,
+        appointment: Appointment,
+        scheduled_at: datetime,
+    ) -> Appointment:
+        self._ensure_scheduled(appointment)
+        appointment.scheduled_at = scheduled_at
+        return appointment
+
+    def cancel(self, appointment: Appointment) -> Appointment:
+        self._ensure_scheduled(appointment)
+        appointment.status = AppointmentStatus.CANCELLED.value
+        return appointment
+
+    def mark_no_show(self, appointment: Appointment) -> Appointment:
+        self._ensure_scheduled(appointment)
+        appointment.status = AppointmentStatus.NO_SHOW.value
+        return appointment
+
+    @staticmethod
+    def _ensure_scheduled(appointment: Appointment) -> None:
+        # The real repository does this check inside the UPDATE statement.
+        if appointment.status != AppointmentStatus.SCHEDULED.value:
+            raise AppointmentNotScheduledError
+
+    def list_for_doctor_between(
+        self,
+        *,
+        doctor_id: str,
+        start: datetime,
+        end: datetime,
+    ) -> list[Appointment]:
+        self.period = (start, end)
+        self.calendar_doctor_id = doctor_id
+        return []
+
+    def register_attendance(
+        self,
+        appointment: Appointment,
+        *,
+        observations: str | None,
+        consultation_info: str | None,
+        exam_names: list[str],
+    ) -> Appointment:
+        self._ensure_scheduled(appointment)
+        self.exam_names = exam_names
+        appointment.observations = observations
+        appointment.consultation_info = consultation_info
+        appointment.status = AppointmentStatus.COMPLETED.value
+        return appointment
+
+
+def make_service(
+    repository: FakeAppointmentRepository | None = None,
+    *users: User,
+) -> AppointmentService:
+    return AppointmentService(
+        repository or FakeAppointmentRepository(),
+        FakeUserRepository(
+            *(
+                users
+                or (
+                    make_user("patient", UserRole.PATIENT),
+                    make_user("doctor", UserRole.DOCTOR),
+                )
+            )
+        ),
+    )
+
+
+def make_create(patient_id: str = "patient", doctor_id: str = "doctor"):
+    return AppointmentCreate(
+        patient_id=patient_id,
+        doctor_id=doctor_id,
+        scheduled_at=FUTURE_SLOT,
+    )
+
+
+def test_schedule_creates_appointment() -> None:
+    appointment = make_service().schedule(
+        current_user=make_user("attendant", UserRole.ATTENDANT),
+        appointment_create=make_create(),
+    )
+
+    assert appointment.patient_id == "patient"
+    assert appointment.doctor_id == "doctor"
+    assert appointment.created_by == "attendant"
+
+
+def test_schedule_rejects_patient_id_that_is_not_a_patient() -> None:
+    with pytest.raises(InvalidPatientError):
+        make_service().schedule(
+            current_user=make_user("attendant", UserRole.ATTENDANT),
+            appointment_create=make_create(patient_id="doctor"),
+        )
+
+
+def test_schedule_rejects_doctor_id_that_is_not_a_doctor() -> None:
+    with pytest.raises(InvalidDoctorError):
+        make_service().schedule(
+            current_user=make_user("attendant", UserRole.ATTENDANT),
+            appointment_create=make_create(doctor_id="patient"),
+        )
+
+
+def test_schedule_rejects_inactive_doctor() -> None:
+    inactive_doctor = make_user("doctor", UserRole.DOCTOR)
+    inactive_doctor.is_active = False
+    service = make_service(
+        None,
+        make_user("patient", UserRole.PATIENT),
+        inactive_doctor,
+    )
+
+    with pytest.raises(InvalidDoctorError):
+        service.schedule(
+            current_user=make_user("attendant", UserRole.ATTENDANT),
+            appointment_create=make_create(),
+        )
+
+
+def test_schedule_rejects_missing_patient() -> None:
+    with pytest.raises(InvalidPatientError):
+        make_service().schedule(
+            current_user=make_user("attendant", UserRole.ATTENDANT),
+            appointment_create=make_create(patient_id="missing"),
+        )
+
+
+def test_schedule_rejects_doctor_time_conflict() -> None:
+    service = make_service(FakeAppointmentRepository(conflict=True))
+
+    with pytest.raises(DoctorUnavailableError):
+        service.schedule(
+            current_user=make_user("attendant", UserRole.ATTENDANT),
+            appointment_create=make_create(),
+        )
+
+
+def test_reschedule_changes_date() -> None:
+    new_date = FUTURE_SLOT
+    service = make_service(FakeAppointmentRepository(make_appointment()))
+
+    appointment = service.reschedule(
+        appointment_id="appointment",
+        scheduled_at=new_date,
+    )
+
+    assert appointment.scheduled_at == new_date
+
+
+def test_reschedule_raises_when_appointment_does_not_exist() -> None:
+    with pytest.raises(AppointmentNotFoundError):
+        make_service().reschedule(
+            appointment_id="missing",
+            scheduled_at=SCHEDULED_AT,
+        )
+
+
+def test_cancel_rejects_appointment_that_is_not_scheduled() -> None:
+    service = make_service(
+        FakeAppointmentRepository(make_appointment(AppointmentStatus.COMPLETED))
+    )
+
+    with pytest.raises(AppointmentNotScheduledError):
+        service.cancel(appointment_id="appointment")
+
+
+def test_register_attendance_completes_appointment_and_requests_exams() -> None:
+    repository = FakeAppointmentRepository(make_appointment())
+
+    appointment = make_service(repository).register_attendance(
+        current_user=make_user("doctor", UserRole.DOCTOR),
+        appointment_id="appointment",
+        attendance=AttendanceCreate(
+            observations="Headache",
+            exam_requests=[" Blood count "],
+        ),
+    )
+
+    assert appointment.status == "completed"
+    assert appointment.observations == "Headache"
+    assert repository.exam_names == ["Blood count"]
+
+
+def test_register_attendance_rejects_other_doctor() -> None:
+    service = make_service(FakeAppointmentRepository(make_appointment()))
+
+    with pytest.raises(AppointmentAccessDeniedError):
+        service.register_attendance(
+            current_user=make_user("other-doctor", UserRole.DOCTOR),
+            appointment_id="appointment",
+            attendance=AttendanceCreate(),
+        )
+
+
+def test_register_attendance_rejects_appointment_not_started() -> None:
+    service = make_service(
+        FakeAppointmentRepository(make_appointment(scheduled_at=FUTURE_SLOT))
+    )
+
+    with pytest.raises(AppointmentNotStartedError):
+        service.register_attendance(
+            current_user=make_user("doctor", UserRole.DOCTOR),
+            appointment_id="appointment",
+            attendance=AttendanceCreate(),
+        )
+
+
+def test_register_attendance_rejects_cancelled_appointment() -> None:
+    service = make_service(
+        FakeAppointmentRepository(make_appointment(AppointmentStatus.CANCELLED))
+    )
+
+    with pytest.raises(AppointmentNotScheduledError):
+        service.register_attendance(
+            current_user=make_user("doctor", UserRole.DOCTOR),
+            appointment_id="appointment",
+            attendance=AttendanceCreate(),
+        )
+
+
+@pytest.mark.parametrize(
+    ("view", "expected_start", "expected_end"),
+    [
+        (CalendarView.DAY, date(2026, 10, 14), date(2026, 10, 15)),
+        (CalendarView.WEEK, date(2026, 10, 12), date(2026, 10, 19)),
+        (CalendarView.MONTH, date(2026, 10, 1), date(2026, 11, 1)),
+    ],
+)
+def test_calendar_period(
+    view: CalendarView,
+    expected_start: date,
+    expected_end: date,
+) -> None:
+    start, end = calendar_period(view, date(2026, 10, 14))
+
+    assert start.date() == expected_start
+    assert end.date() == expected_end
+    assert start.utcoffset() is not None
+
+
+def test_calendar_period_month_crosses_year() -> None:
+    start, end = calendar_period(CalendarView.MONTH, date(2026, 12, 31))
+
+    assert start.date() == date(2026, 12, 1)
+    assert end.date() == date(2027, 1, 1)
+
+
+def test_get_calendar_queries_requested_period() -> None:
+    repository = FakeAppointmentRepository()
+
+    calendar = make_service(repository).get_calendar(
+        current_user=make_user("doctor", UserRole.DOCTOR),
+        view=CalendarView.WEEK,
+        day=date(2026, 10, 14),
+        doctor_id="other-doctor",
+    )
+
+    assert repository.calendar_doctor_id == "doctor"
+    assert repository.period == (calendar.start, calendar.end)
+    assert calendar.view == CalendarView.WEEK
+    assert calendar.appointments == []
+
+
+def test_admin_gets_calendar_of_given_doctor() -> None:
+    repository = FakeAppointmentRepository()
+
+    make_service(repository).get_calendar(
+        current_user=make_user("admin", UserRole.ADMIN),
+        view=CalendarView.DAY,
+        doctor_id="doctor",
+    )
+
+    assert repository.calendar_doctor_id == "doctor"
+
+
+def test_admin_calendar_requires_doctor_id() -> None:
+    with pytest.raises(CalendarDoctorRequiredError):
+        make_service().get_calendar(
+            current_user=make_user("admin", UserRole.ADMIN),
+            view=CalendarView.DAY,
+        )
+
+
+def test_admin_can_register_attendance_for_any_appointment() -> None:
+    service = make_service(FakeAppointmentRepository(make_appointment()))
+
+    appointment = service.register_attendance(
+        current_user=make_user("admin", UserRole.ADMIN),
+        appointment_id="appointment",
+        attendance=AttendanceCreate(),
+    )
+
+    assert appointment.status == "completed"
+
+
+@pytest.mark.parametrize(
+    "scheduled_at",
+    [
+        FUTURE_SLOT,
+        FUTURE_SLOT.replace(minute=0),
+        # 10:30 in Sao Paulo is 13:30 UTC.
+        FUTURE_SLOT.astimezone(timezone(timedelta(hours=-3))),
+    ],
+)
+def test_appointment_slot_accepts_future_time_on_the_grid(
+    scheduled_at: datetime,
+) -> None:
+    assert AppointmentReschedule(scheduled_at=scheduled_at).scheduled_at == (
+        scheduled_at
+    )
+
+
+@pytest.mark.parametrize(
+    "scheduled_at",
+    [
+        SCHEDULED_AT,
+        FUTURE_SLOT.replace(minute=1),
+        FUTURE_SLOT.replace(second=30),
+        FUTURE_SLOT.replace(microsecond=1),
+        # 19:15 at +05:45 is 13:30 UTC; 19:00 at +05:45 is 13:15 UTC.
+        datetime(2099, 1, 5, 19, 0, tzinfo=timezone(timedelta(hours=5, minutes=45))),
+        FUTURE_SLOT.replace(tzinfo=None),
+    ],
+)
+def test_appointment_slot_rejects_past_off_grid_or_naive_time(
+    scheduled_at: datetime,
+) -> None:
+    with pytest.raises(ValidationError):
+        AppointmentCreate(
+            patient_id="patient",
+            doctor_id="doctor",
+            scheduled_at=scheduled_at,
+        )
+
+
+def test_list_for_patient_only_returns_the_session_patient() -> None:
+    appointment = make_appointment()
+    repository = FakeAppointmentRepository(appointment)
+
+    appointments = make_service(repository).list_for_patient(
+        current_user=make_user("patient", UserRole.PATIENT),
+    )
+
+    assert appointments == [appointment]
+    assert repository.list_filters == {"doctor_id": None, "patient_id": "patient"}
+
+
+def test_list_attended_patients_uses_the_session_doctor() -> None:
+    repository = FakeAppointmentRepository()
+
+    patients = make_service(repository).list_attended_patients(
+        current_user=make_user("doctor", UserRole.DOCTOR),
+    )
+
+    assert repository.attended_by == "doctor"
+    assert [(patient.id, patient.last_appointment_at) for patient in patients] == [
+        ("patient", SCHEDULED_AT)
+    ]
+
+
+@pytest.mark.parametrize(
+    "user",
+    [
+        make_user("attendant", UserRole.ATTENDANT),
+        make_user("admin", UserRole.ADMIN),
+        make_user("doctor", UserRole.DOCTOR),
+    ],
+)
+def test_mark_no_show_after_the_appointment_time(user: User) -> None:
+    repository = FakeAppointmentRepository(make_appointment())
+
+    appointment = make_service(repository).mark_no_show(
+        current_user=user,
+        appointment_id="appointment",
+    )
+
+    assert appointment.status == AppointmentStatus.NO_SHOW.value
+
+
+def test_mark_no_show_rejects_appointment_not_started() -> None:
+    service = make_service(
+        FakeAppointmentRepository(make_appointment(scheduled_at=FUTURE_SLOT))
+    )
+
+    with pytest.raises(AppointmentNotStartedError):
+        service.mark_no_show(
+            current_user=make_user("attendant", UserRole.ATTENDANT),
+            appointment_id="appointment",
+        )
+
+
+def test_mark_no_show_rejects_another_doctor() -> None:
+    appointment = make_appointment()
+    service = make_service(FakeAppointmentRepository(appointment))
+
+    with pytest.raises(AppointmentAccessDeniedError):
+        service.mark_no_show(
+            current_user=make_user("other-doctor", UserRole.DOCTOR),
+            appointment_id="appointment",
+        )
+
+    assert appointment.status == AppointmentStatus.SCHEDULED.value
+
+
+def test_mark_no_show_rejects_appointment_that_is_not_scheduled() -> None:
+    service = make_service(
+        FakeAppointmentRepository(make_appointment(AppointmentStatus.COMPLETED))
+    )
+
+    with pytest.raises(AppointmentNotScheduledError):
+        service.mark_no_show(
+            current_user=make_user("attendant", UserRole.ATTENDANT),
+            appointment_id="appointment",
+        )

@@ -8,8 +8,6 @@ from sqlalchemy.orm import Session
 from app.core.database import Base
 from app.modules.auth.enums import UserRole
 from app.modules.auth.exceptions import UserNotFoundError
-from app.modules.auth.models import User
-from app.modules.auth.repository import UserRepository
 from app.modules.notifications.enums import EmailEventType
 from app.modules.notifications.models import EmailNotification
 from app.modules.notifications.repository import EmailNotificationRepository
@@ -26,6 +24,8 @@ from app.modules.role_transitions.models import RoleTransitionRequest
 from app.modules.role_transitions.repository import RoleTransitionRepository
 from app.modules.role_transitions.schemas import RoleTransitionCreate
 from app.modules.role_transitions.service import RoleTransitionService
+from app.modules.users.models import User
+from app.modules.users.repository import UserRepository
 
 
 class FakeEmailNotificationRepository:

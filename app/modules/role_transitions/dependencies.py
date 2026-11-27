@@ -4,10 +4,10 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.modules.auth.repository import UserRepository
 from app.modules.notifications.dependencies import NotificationServiceDep
 from app.modules.role_transitions.repository import RoleTransitionRepository
 from app.modules.role_transitions.service import RoleTransitionService
+from app.modules.users.repository import UserRepository
 
 DbSession = Annotated[Session, Depends(get_db)]
 

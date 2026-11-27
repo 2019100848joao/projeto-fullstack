@@ -1,0 +1,212 @@
+from datetime import UTC, date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
+
+from app.core.config import settings
+from app.modules.appointments.enums import CalendarView
+from app.modules.appointments.exceptions import (
+    AppointmentAccessDeniedError,
+    AppointmentNotFoundError,
+    AppointmentNotStartedError,
+    CalendarDoctorRequiredError,
+    DoctorUnavailableError,
+    InvalidDoctorError,
+    InvalidPatientError,
+)
+from app.modules.appointments.models import Appointment
+from app.modules.appointments.repository import AppointmentRepository
+from app.modules.appointments.schemas import (
+    AppointmentCreate,
+    AttendanceCreate,
+    AttendedPatientRead,
+    CalendarRead,
+)
+from app.modules.auth.enums import UserRole
+from app.modules.users.models import User
+from app.modules.users.repository import UserRepository
+
+
+def calendar_period(view: CalendarView, day: date) -> tuple[datetime, datetime]:
+    if view == CalendarView.DAY:
+        first_day = day
+        end_day = day + timedelta(days=1)
+    elif view == CalendarView.WEEK:
+        first_day = day - timedelta(days=day.weekday())
+        end_day = first_day + timedelta(days=7)
+    else:
+        first_day = day.replace(day=1)
+        end_day = (first_day + timedelta(days=32)).replace(day=1)
+
+    timezone = ZoneInfo(settings.timezone)
+    return (
+        datetime.combine(first_day, time.min, timezone),
+        datetime.combine(end_day, time.min, timezone),
+    )
+
+
+class AppointmentService:
+    def __init__(
+        self,
+        repository: AppointmentRepository,
+        user_repository: UserRepository,
+    ) -> None:
+        self.repository = repository
+        self.user_repository = user_repository
+
+    def schedule(
+        self,
+        *,
+        current_user: User,
+        appointment_create: AppointmentCreate,
+    ) -> Appointment:
+        patient = self.user_repository.get_active_by_role(
+            appointment_create.patient_id,
+            UserRole.PATIENT,
+        )
+        if patient is None:
+            raise InvalidPatientError
+
+        doctor = self.user_repository.get_active_by_role(
+            appointment_create.doctor_id,
+            UserRole.DOCTOR,
+        )
+        if doctor is None:
+            raise InvalidDoctorError
+
+        if self.repository.doctor_has_conflict(
+            doctor_id=doctor.id,
+            scheduled_at=appointment_create.scheduled_at,
+        ):
+            raise DoctorUnavailableError
+
+        return self.repository.create(
+            patient_id=patient.id,
+            doctor_id=doctor.id,
+            created_by=current_user.id,
+            scheduled_at=appointment_create.scheduled_at,
+        )
+
+    def list_appointments(
+        self,
+        *,
+        doctor_id: str | None = None,
+        patient_id: str | None = None,
+    ) -> list[Appointment]:
+        return self.repository.list_all(doctor_id=doctor_id, patient_id=patient_id)
+
+    def list_for_patient(self, *, current_user: User) -> list[Appointment]:
+        # The patient comes from the session only, so nobody can list another patient.
+        return self.repository.list_all(patient_id=current_user.id)
+
+    def list_attended_patients(
+        self, *, current_user: User
+    ) -> list[AttendedPatientRead]:
+        # The doctor comes from the session only, so nobody can list the
+        # patients of another doctor.
+        return [
+            AttendedPatientRead(
+                id=patient.id,
+                full_name=patient.full_name,
+                email=patient.email,
+                last_appointment_at=last_attended_at,
+            )
+            for patient, last_attended_at in self.repository.list_patients_attended_by(
+                current_user.id
+            )
+        ]
+
+    def reschedule(self, *, appointment_id: str, scheduled_at: datetime) -> Appointment:
+        appointment = self._get(appointment_id)
+
+        if self.repository.doctor_has_conflict(
+            doctor_id=appointment.doctor_id,
+            scheduled_at=scheduled_at,
+            ignore_appointment_id=appointment.id,
+        ):
+            raise DoctorUnavailableError
+
+        return self.repository.reschedule(appointment, scheduled_at)
+
+    def cancel(self, *, appointment_id: str) -> Appointment:
+        return self.repository.cancel(self._get(appointment_id))
+
+    def mark_no_show(self, *, current_user: User, appointment_id: str) -> Appointment:
+        appointment = self._get(appointment_id)
+
+        # Doctors only mark their own appointments; attendants and admins any.
+        if (
+            current_user.role == UserRole.DOCTOR.value
+            and appointment.doctor_id != current_user.id
+        ):
+            raise AppointmentAccessDeniedError
+
+        if appointment.scheduled_at > datetime.now(UTC):
+            raise AppointmentNotStartedError
+
+        return self.repository.mark_no_show(appointment)
+
+    def get_calendar(
+        self,
+        *,
+        current_user: User,
+        view: CalendarView,
+        day: date | None = None,
+        doctor_id: str | None = None,
+    ) -> CalendarRead:
+        if current_user.role == UserRole.ADMIN.value:
+            if doctor_id is None:
+                raise CalendarDoctorRequiredError
+        else:
+            doctor_id = current_user.id
+
+        if day is None:
+            day = datetime.now(ZoneInfo(settings.timezone)).date()
+
+        start, end = calendar_period(view, day)
+        appointments = self.repository.list_for_doctor_between(
+            doctor_id=doctor_id,
+            start=start,
+            end=end,
+        )
+        return CalendarRead.model_validate(
+            {"view": view, "start": start, "end": end, "appointments": appointments},
+            from_attributes=True,
+        )
+
+    def get_details(self, *, current_user: User, appointment_id: str) -> Appointment:
+        appointment = self._get(appointment_id)
+
+        if (
+            current_user.role != UserRole.ADMIN.value
+            and appointment.doctor_id != current_user.id
+        ):
+            raise AppointmentAccessDeniedError
+
+        return appointment
+
+    def register_attendance(
+        self,
+        *,
+        current_user: User,
+        appointment_id: str,
+        attendance: AttendanceCreate,
+    ) -> Appointment:
+        appointment = self.get_details(
+            current_user=current_user,
+            appointment_id=appointment_id,
+        )
+        if appointment.scheduled_at > datetime.now(UTC):
+            raise AppointmentNotStartedError
+
+        return self.repository.register_attendance(
+            appointment,
+            observations=attendance.observations,
+            consultation_info=attendance.consultation_info,
+            exam_names=attendance.exam_requests,
+        )
+
+    def _get(self, appointment_id: str) -> Appointment:
+        appointment = self.repository.get_by_id(appointment_id)
+        if appointment is None:
+            raise AppointmentNotFoundError
+
+        return appointment

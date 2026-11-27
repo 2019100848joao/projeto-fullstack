@@ -11,12 +11,12 @@ from app.core.database import Base
 from app.main import app
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.enums import UserRole
-from app.modules.auth.models import User
 from app.modules.notifications.dependencies import get_notification_service
 from app.modules.notifications.enums import EmailEventType
 from app.modules.notifications.models import EmailNotification
 from app.modules.notifications.repository import EmailNotificationRepository
 from app.modules.notifications.service import NotificationService
+from app.modules.users.models import User
 
 
 class FakeEmailNotificationRepository:

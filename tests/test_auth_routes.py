@@ -16,8 +16,8 @@ from app.modules.auth.exceptions import (
     RoleChangeNotAllowedError,
     UserNotFoundError,
 )
-from app.modules.auth.models import User
 from app.modules.auth.schemas import Token, UserCreate
+from app.modules.users.models import User
 
 
 def make_user(
@@ -57,10 +57,6 @@ class FakeAuthService:
         if self.error is not None:
             raise self.error
         return Token(access_token="fake-token")
-
-    def list_users(self, *, role: UserRole | None = None) -> list[User]:
-        self.role_filter = role
-        return [make_user(role or UserRole.PATIENT)]
 
     def update_user_role(
         self,
@@ -154,43 +150,12 @@ def test_login_returns_403_when_user_is_inactive() -> None:
     assert response.status_code == 403
 
 
-def test_admin_can_list_users_filtered_by_role() -> None:
-    service = FakeAuthService()
-    app.dependency_overrides[get_current_user] = lambda: make_user(UserRole.ADMIN)
-    app.dependency_overrides[get_auth_service] = lambda: service
-
-    response = TestClient(app).get("/auth/users?role=patient")
-
-    assert response.status_code == 200
-    assert service.role_filter == UserRole.PATIENT
-    assert "hashed_password" not in response.json()[0]
-
-
-@pytest.mark.parametrize(
-    "role",
-    [UserRole.PATIENT, UserRole.DOCTOR, UserRole.ATTENDANT],
-)
-def test_non_admin_cannot_list_users(role: UserRole) -> None:
-    app.dependency_overrides[get_current_user] = lambda: make_user(role)
-    app.dependency_overrides[get_auth_service] = override_auth_service
-
-    response = TestClient(app).get("/auth/users")
-
-    assert response.status_code == 403
-
-
-def test_list_users_requires_authentication() -> None:
-    response = TestClient(app).get("/auth/users")
-
-    assert response.status_code == 401
-
-
 def test_update_user_role_returns_200() -> None:
     app.dependency_overrides[get_current_user] = lambda: make_user(UserRole.ADMIN)
     app.dependency_overrides[get_auth_service] = override_auth_service
 
     response = TestClient(app).patch(
-        "/auth/users/01K4SRY37DGE7K5YWWKNB0RESW/role",
+        "/auth/01K4SRY37DGE7K5YWWKNB0RESW/role",
         json={"role": "doctor"},
     )
 
@@ -205,7 +170,7 @@ def test_update_user_role_returns_404_when_user_not_found() -> None:
     )
 
     response = TestClient(app).patch(
-        "/auth/users/01K4SRY37DGE7K5YWWKNB0RESW/role",
+        "/auth/01K4SRY37DGE7K5YWWKNB0RESW/role",
         json={"role": "doctor"},
     )
 
@@ -219,7 +184,7 @@ def test_update_user_role_returns_403_when_not_allowed() -> None:
     )
 
     response = TestClient(app).patch(
-        "/auth/users/01K4SRY37DGE7K5YWWKNB0RESW/role",
+        "/auth/01K4SRY37DGE7K5YWWKNB0RESW/role",
         json={"role": "doctor"},
     )
 
