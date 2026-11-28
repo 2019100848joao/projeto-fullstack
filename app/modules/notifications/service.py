@@ -1,6 +1,18 @@
+from app.modules.auth.enums import UserRole
 from app.modules.notifications.enums import EmailEventType
 from app.modules.notifications.models import EmailNotification
 from app.modules.notifications.repository import EmailNotificationRepository
+
+ROLE_LABELS: dict[str, str] = {
+    UserRole.ADMIN.value: "Administrador",
+    UserRole.PATIENT.value: "Paciente",
+    UserRole.DOCTOR.value: "Médico",
+    UserRole.ATTENDANT.value: "Atendente",
+}
+
+
+def role_label(role: str) -> str:
+    return ROLE_LABELS.get(role, role)
 
 
 class NotificationService:
@@ -13,12 +25,13 @@ class NotificationService:
         recipient_email: str,
         full_name: str,
     ) -> EmailNotification:
+        patient = role_label(UserRole.PATIENT.value)
         return self.repository.create(
             recipient_email=recipient_email,
-            subject="Confirmacao de cadastro como Paciente",
+            subject=f"Confirmação de cadastro como {patient}",
             body=(
-                f"Ola, {full_name}. Sua conta foi criada com o papel inicial "
-                "de paciente."
+                f"Olá, {full_name}. Sua conta foi criada com o perfil inicial "
+                f"de {patient}."
             ),
             event_type=EmailEventType.USER_REGISTERED,
         )
@@ -31,13 +44,14 @@ class NotificationService:
         requested_role: str,
         admin_emails: list[str],
     ) -> list[EmailNotification]:
+        role = role_label(requested_role)
         created: list[EmailNotification] = [
             self.repository.create(
                 recipient_email=requester_email,
-                subject=f"Solicitacao de transicao para {requested_role} enviada",
+                subject=f"Solicitação de transição para {role} enviada",
                 body=(
-                    f"Ola, {requester_name}. Sua solicitacao de transicao para "
-                    f"o cargo '{requested_role}' aguarda aprovacao do admin."
+                    f"Olá, {requester_name}. Sua solicitação de transição para o "
+                    f"cargo de {role} aguarda a aprovação do administrador."
                 ),
                 event_type=EmailEventType.ROLE_TRANSITION_REQUESTED,
             )
@@ -46,10 +60,10 @@ class NotificationService:
             created.append(
                 self.repository.create(
                     recipient_email=admin_email,
-                    subject=f"Novo pedido de transicao de cargo: {requester_name}",
+                    subject=f"Novo pedido de transição de cargo: {requester_name}",
                     body=(
-                        f"O usuario {requester_name} ({requester_email}) "
-                        f"solicitou transicao para o cargo '{requested_role}'."
+                        f"O usuário {requester_name} ({requester_email}) "
+                        f"solicitou a transição para o cargo de {role}."
                     ),
                     event_type=EmailEventType.ROLE_TRANSITION_ADMIN_ALERT,
                 )
@@ -64,25 +78,20 @@ class NotificationService:
         requested_role: str,
         approved: bool,
     ) -> EmailNotification:
-        if approved:
-            return self.repository.create(
-                recipient_email=recipient_email,
-                subject=f"Transicao para {requested_role} aprovada",
-                body=(
-                    f"Ola, {full_name}. Sua solicitacao de transicao para o "
-                    f"cargo '{requested_role}' foi aprovada pelo administrador."
-                ),
-                event_type=EmailEventType.ROLE_TRANSITION_APPROVED,
-            )
-
+        role = role_label(requested_role)
+        decision = "aprovada" if approved else "recusada"
         return self.repository.create(
             recipient_email=recipient_email,
-            subject=f"Transicao para {requested_role} recusada",
+            subject=f"Transição para {role} {decision}",
             body=(
-                f"Ola, {full_name}. Sua solicitacao de transicao para o "
-                f"cargo '{requested_role}' foi recusada pelo administrador."
+                f"Olá, {full_name}. Sua solicitação de transição para o cargo de "
+                f"{role} foi {decision} pelo administrador."
             ),
-            event_type=EmailEventType.ROLE_TRANSITION_REJECTED,
+            event_type=(
+                EmailEventType.ROLE_TRANSITION_APPROVED
+                if approved
+                else EmailEventType.ROLE_TRANSITION_REJECTED
+            ),
         )
 
     def list_emails(

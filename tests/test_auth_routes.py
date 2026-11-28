@@ -14,6 +14,7 @@ from app.modules.auth.exceptions import (
     EmailAlreadyRegisteredError,
     InactiveUserError,
     InvalidCredentialsError,
+    LastAdminError,
     RoleChangeNotAllowedError,
     UserNotFoundError,
 )
@@ -205,3 +206,20 @@ def test_update_user_role_returns_409_when_doctor_has_open_work() -> None:
 
     assert response.status_code == 409
     assert "exams without a result" in response.json()["detail"]
+
+
+def test_update_user_role_returns_409_for_the_last_admin() -> None:
+    app.dependency_overrides[get_current_user] = lambda: make_user(UserRole.ADMIN)
+    app.dependency_overrides[get_auth_service] = lambda: FakeAuthService(
+        error=LastAdminError()
+    )
+
+    response = TestClient(app).patch(
+        "/auth/01K4SRY37DGE7K5YWWKNB0RESW/role",
+        json={"role": "patient"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "The last active admin cannot leave the admin role"
+    )

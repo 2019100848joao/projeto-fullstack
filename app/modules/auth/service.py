@@ -7,6 +7,7 @@ from app.modules.auth.exceptions import (
     EmailAlreadyRegisteredError,
     InactiveUserError,
     InvalidCredentialsError,
+    LastAdminError,
     RoleChangeNotAllowedError,
     UserNotFoundError,
 )
@@ -14,21 +15,6 @@ from app.modules.auth.schemas import Token, UserCreate
 from app.modules.notifications.service import NotificationService
 from app.modules.users.models import User
 from app.modules.users.repository import UserRepository
-
-ROLE_CHANGE_RULES: dict[UserRole, dict[UserRole, set[UserRole]]] = {
-    UserRole.ADMIN: {
-        UserRole.ADMIN: set(UserRole),
-        UserRole.PATIENT: set(UserRole),
-        UserRole.DOCTOR: set(UserRole),
-        UserRole.ATTENDANT: set(UserRole),
-    },
-    UserRole.DOCTOR: {
-        UserRole.ATTENDANT: {UserRole.PATIENT, UserRole.ATTENDANT},
-    },
-    UserRole.ATTENDANT: {
-        UserRole.PATIENT: {UserRole.PATIENT, UserRole.ATTENDANT},
-    },
-}
 
 
 def ensure_doctor_work_is_closed(
@@ -102,16 +88,23 @@ class AuthService:
         target_user_id: str,
         new_role: UserRole,
     ) -> User:
+        # Any other role change goes through a role transition request, which
+        # an admin approves, so direct changes are an admin decision only.
+        if current_user.role != UserRole.ADMIN.value:
+            raise RoleChangeNotAllowedError
+
         target_user = self.repository.get_by_id(target_user_id)
         if target_user is None:
             raise UserNotFoundError
 
-        current_role = UserRole(current_user.role)
-        target_role = UserRole(target_user.role)
-        allowed_target_roles = ROLE_CHANGE_RULES.get(current_role, {}).get(target_role)
-
-        if allowed_target_roles is None or new_role not in allowed_target_roles:
-            raise RoleChangeNotAllowedError
+        if target_user.role == UserRole.ADMIN.value and new_role != UserRole.ADMIN:
+            other_admins = [
+                admin_id
+                for admin_id in self.repository.lock_active_admin_ids()
+                if admin_id != target_user.id
+            ]
+            if not other_admins:
+                raise LastAdminError
 
         ensure_doctor_work_is_closed(
             self.repository,

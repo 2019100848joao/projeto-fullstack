@@ -143,3 +143,47 @@ def test_email_repository_persists_and_filters_by_recipient() -> None:
         patient_emails = repository.list_all(recipient_email="patient@example.com")
         assert len(patient_emails) == 1
         assert len(patient_emails[0].id) == 26
+
+
+def test_decision_email_uses_portuguese_role_names_and_accents() -> None:
+    service = NotificationService(FakeEmailNotificationRepository())
+
+    approved = service.record_transition_decision_email(
+        recipient_email="ana@example.com",
+        full_name="Ana",
+        requested_role="attendant",
+        approved=True,
+    )
+    rejected = service.record_transition_decision_email(
+        recipient_email="ana@example.com",
+        full_name="Ana",
+        requested_role="doctor",
+        approved=False,
+    )
+
+    assert approved.subject == "Transição para Atendente aprovada"
+    assert "cargo de Atendente foi aprovada" in approved.body
+    assert rejected.subject == "Transição para Médico recusada"
+    assert rejected.event_type == EmailEventType.ROLE_TRANSITION_REJECTED.value
+
+
+def test_request_and_registration_emails_have_no_english_role_names() -> None:
+    service = NotificationService(FakeEmailNotificationRepository())
+
+    created = service.record_transition_requested_emails(
+        requester_email="ana@example.com",
+        requester_name="Ana",
+        requested_role="doctor",
+        admin_emails=["admin@clinic.com"],
+    )
+    created.append(
+        service.record_registration_email(
+            recipient_email="ana@example.com", full_name="Ana"
+        )
+    )
+
+    texts = " ".join(f"{email.subject} {email.body}" for email in created)
+    assert "Solicitação de transição para Médico enviada" in texts
+    assert "Confirmação de cadastro como Paciente" in texts
+    assert "Olá, Ana." in texts
+    assert not any(word in texts for word in ("doctor", "attendant", "patient"))

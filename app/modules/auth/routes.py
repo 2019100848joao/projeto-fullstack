@@ -8,6 +8,7 @@ from app.modules.auth.exceptions import (
     EmailAlreadyRegisteredError,
     InactiveUserError,
     InvalidCredentialsError,
+    LastAdminError,
     RoleChangeNotAllowedError,
     UserNotFoundError,
 )
@@ -86,7 +87,12 @@ def update_user_role(
     except RoleChangeNotAllowedError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to change this user role",
+            detail="Only an admin can change a user role",
+        ) from exc
+    except LastAdminError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The last active admin cannot leave the admin role",
         ) from exc
     except DoctorHasOpenWorkError as exc:
         raise HTTPException(

@@ -8,6 +8,7 @@ from app.modules.appointments.enums import AppointmentStatus
 from app.modules.appointments.models import Appointment
 from app.modules.exams.enums import ExamStatus
 from app.modules.exams.models import Exam
+from app.modules.users.models import User
 from app.modules.users.repository import UserRepository
 
 SCHEDULED_AT = datetime(2026, 10, 14, 13, 0, tzinfo=UTC)
@@ -80,3 +81,36 @@ def test_exams_without_result_count_as_open_work(
         db.flush()
 
         assert UserRepository(db).has_open_doctor_work("doctor") is expected
+
+
+def test_lock_active_admin_ids_lists_only_active_admins(engine: Engine) -> None:
+    with Session(engine) as db:
+        db.add_all(
+            [
+                User(
+                    id="admin-b",
+                    email="b@x.com",
+                    full_name="B",
+                    hashed_password="h",
+                    role="admin",
+                ),
+                User(
+                    id="admin-a",
+                    email="a@x.com",
+                    full_name="A",
+                    hashed_password="h",
+                    role="admin",
+                ),
+                User(
+                    id="admin-off",
+                    email="off@x.com",
+                    full_name="Off",
+                    hashed_password="h",
+                    role="admin",
+                    is_active=False,
+                ),
+            ]
+        )
+        db.flush()
+
+        assert UserRepository(db).lock_active_admin_ids() == ["admin-a", "admin-b"]

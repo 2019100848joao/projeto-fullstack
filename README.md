@@ -96,7 +96,7 @@ python -c "from app.core.migrations import run_migrations; run_migrations()"
 - `GET /document-types` lists available document types without authentication.
   Migration `009_seed_document_types` loads the basic types, `CPF` and `RG`.
 - `POST /document-types` creates a document type for administrators.
-- `PATCH /auth/{user_id}/role` changes a user role when the authenticated user has permission.
+- `PATCH /auth/{user_id}/role` lets an `admin` change a user role directly.
 - `POST /role-transitions` requests a role transition to `doctor` or `attendant` and records notification emails.
 - `GET /role-transitions/me` lists the authenticated user's own requests, newest first.
 - `GET /role-transitions` lists role transition requests for administrators (optional `?status=` filter).
@@ -138,11 +138,9 @@ Supported roles:
 
 Public registration creates `patient` users only. An initial `admin` account is seeded on startup, and users can request a transition to `doctor` or `attendant` for `admin` approval.
 
-Direct role changes (`PATCH /auth/{user_id}/role`):
+Direct role changes (`PATCH /auth/{user_id}/role`) are **admin only**: any other role change goes through a role transition request that an admin approves. Other roles get `403`.
 
-- `admin` can change any user to any role.
-- `doctor` can change `attendant` users to `patient` or `attendant`.
-- `attendant` can change `patient` users to `patient` or `attendant`.
+- The last active `admin` cannot leave the admin role (`409`), so the system is never left without an admin. Concurrent demotions are serialized by locking the active admins, so two admins cannot demote each other at the same time and leave none.
 
 A `doctor` cannot leave the role, either through `PATCH /auth/{user_id}/role` or an approved role transition, while they still have `scheduled` appointments or exams without a result: the API answers `409`. Only the doctor who requested an exam can register its result, so that work would otherwise be stuck. Cancel or reschedule the appointments and finish the exams first; the pending transition request can then be approved.
 

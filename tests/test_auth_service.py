@@ -13,6 +13,7 @@ from app.modules.auth.exceptions import (
     EmailAlreadyRegisteredError,
     InactiveUserError,
     InvalidCredentialsError,
+    LastAdminError,
     RoleChangeNotAllowedError,
     UserNotFoundError,
 )
@@ -83,6 +84,7 @@ class FakeUserRepository:
         self.created_role: UserRole | None = None
         self.create_calls = 0
         self.open_doctor_work = False
+        self.active_admin_ids: list[str] = []
 
     def get_by_email(self, email: str) -> User | None:
         return self.user
@@ -96,6 +98,9 @@ class FakeUserRepository:
 
     def has_open_doctor_work(self, user_id: str) -> bool:
         return self.open_doctor_work
+
+    def lock_active_admin_ids(self) -> list[str]:
+        return list(self.active_admin_ids)
 
     def commit(self) -> None:
         pass
@@ -379,53 +384,76 @@ def test_admin_can_change_any_user_role() -> None:
     assert updated_user.role == "doctor"
 
 
-def test_doctor_can_change_attendant_to_patient() -> None:
-    service = AuthService(FakeUserRepository(make_user(UserRole.ATTENDANT)))
-
-    updated_user = service.update_user_role(
-        current_user=make_user(UserRole.DOCTOR),
-        target_user_id="01K4SRY37DGE7K5YWWKNB0RESW",
-        new_role=UserRole.PATIENT,
-    )
-
-    assert updated_user.role == "patient"
-
-
-def test_attendant_can_change_patient_to_attendant() -> None:
-    service = AuthService(FakeUserRepository(make_user(UserRole.PATIENT)))
-
-    updated_user = service.update_user_role(
-        current_user=make_user(UserRole.ATTENDANT),
-        target_user_id="01K4SRY37DGE7K5YWWKNB0RESW",
-        new_role=UserRole.ATTENDANT,
-    )
-
-    assert updated_user.role == "attendant"
-
-
 @pytest.mark.parametrize(
-    ("actor_role", "target_role", "new_role"),
+    "actor_role", [UserRole.PATIENT, UserRole.DOCTOR, UserRole.ATTENDANT]
+)
+@pytest.mark.parametrize(
+    ("target_role", "new_role"),
     [
-        (UserRole.PATIENT, UserRole.PATIENT, UserRole.DOCTOR),
-        (UserRole.DOCTOR, UserRole.PATIENT, UserRole.DOCTOR),
-        (UserRole.DOCTOR, UserRole.ATTENDANT, UserRole.ADMIN),
-        (UserRole.ATTENDANT, UserRole.PATIENT, UserRole.DOCTOR),
-        (UserRole.ATTENDANT, UserRole.DOCTOR, UserRole.PATIENT),
+        (UserRole.PATIENT, UserRole.ATTENDANT),
+        (UserRole.ATTENDANT, UserRole.PATIENT),
+        (UserRole.PATIENT, UserRole.DOCTOR),
+        (UserRole.DOCTOR, UserRole.PATIENT),
     ],
 )
-def test_role_change_rejects_disallowed_change(
+def test_only_admin_changes_roles_directly(
     actor_role: UserRole,
     target_role: UserRole,
     new_role: UserRole,
 ) -> None:
-    service = AuthService(FakeUserRepository(make_user(target_role)))
+    target = make_user(target_role)
+    service = AuthService(FakeUserRepository(target))
 
     with pytest.raises(RoleChangeNotAllowedError):
         service.update_user_role(
             current_user=make_user(actor_role),
-            target_user_id="01K4SRY37DGE7K5YWWKNB0RESW",
+            target_user_id=target.id,
             new_role=new_role,
         )
+
+    assert target.role == target_role.value
+
+
+def test_non_admin_gets_permission_error_even_for_unknown_user() -> None:
+    service = AuthService(FakeUserRepository())
+
+    with pytest.raises(RoleChangeNotAllowedError):
+        service.update_user_role(
+            current_user=make_user(UserRole.ATTENDANT),
+            target_user_id="UNKNOWN",
+            new_role=UserRole.ATTENDANT,
+        )
+
+
+def test_last_active_admin_cannot_leave_the_admin_role() -> None:
+    admin = make_user(UserRole.ADMIN)
+    repository = FakeUserRepository(admin)
+    repository.active_admin_ids = [admin.id]
+    service = AuthService(repository)
+
+    with pytest.raises(LastAdminError):
+        service.update_user_role(
+            current_user=admin,
+            target_user_id=admin.id,
+            new_role=UserRole.PATIENT,
+        )
+
+    assert admin.role == UserRole.ADMIN.value
+
+
+def test_admin_can_leave_the_role_while_another_admin_remains() -> None:
+    admin = make_user(UserRole.ADMIN)
+    repository = FakeUserRepository(admin)
+    repository.active_admin_ids = [admin.id, "01OTHERADMIN"]
+    service = AuthService(repository)
+
+    updated = service.update_user_role(
+        current_user=admin,
+        target_user_id=admin.id,
+        new_role=UserRole.PATIENT,
+    )
+
+    assert updated.role == UserRole.PATIENT.value
 
 
 def test_role_change_raises_when_user_does_not_exist() -> None:
