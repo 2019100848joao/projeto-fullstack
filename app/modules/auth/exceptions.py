@@ -20,3 +20,7 @@ class UserNotFoundError(AuthError):
 
 class RoleChangeNotAllowedError(AuthError):
     pass
+
+
+class DoctorHasOpenWorkError(AuthError):
+    """A doctor cannot leave the role with scheduled appointments or open exams."""

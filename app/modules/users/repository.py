@@ -1,9 +1,13 @@
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 
 from app.core.database import SqlRepository
+from app.modules.appointments.enums import AppointmentStatus
+from app.modules.appointments.models import Appointment
 from app.modules.auth.enums import UserRole
 from app.modules.document_types.models import DocumentType
+from app.modules.exams.enums import ExamStatus
+from app.modules.exams.models import Exam
 from app.modules.users.exceptions import DocumentAlreadyExistsError
 from app.modules.users.models import User, UserDocument
 
@@ -23,6 +27,20 @@ class UserRepository(SqlRepository):
             User.is_active.is_(True),
         )
         return self.db.scalar(statement)
+
+    def has_open_doctor_work(self, user_id: str) -> bool:
+        """Scheduled appointments or exams still waiting for this doctor's result."""
+        open_appointment = select(Appointment.id).where(
+            Appointment.doctor_id == user_id,
+            Appointment.status == AppointmentStatus.SCHEDULED.value,
+        )
+        open_exam = select(Exam.id).where(
+            Exam.doctor_id == user_id,
+            Exam.status != ExamStatus.RESULT_AVAILABLE.value,
+        )
+        return bool(
+            self.db.scalar(select(or_(open_appointment.exists(), open_exam.exists())))
+        )
 
     def list_all(self, *, role: UserRole | None = None) -> list[User]:
         statement = select(User).order_by(User.full_name, User.id)

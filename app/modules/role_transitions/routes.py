@@ -3,7 +3,8 @@ from collections.abc import Callable
 from fastapi import APIRouter, HTTPException, status
 
 from app.modules.auth.dependencies import AdminUserDep, CurrentUserDep
-from app.modules.auth.exceptions import UserNotFoundError
+from app.modules.auth.exceptions import DoctorHasOpenWorkError, UserNotFoundError
+from app.modules.auth.routes import DOCTOR_HAS_OPEN_WORK_DETAIL
 from app.modules.role_transitions.dependencies import RoleTransitionServiceDep
 from app.modules.role_transitions.enums import TransitionStatus
 from app.modules.role_transitions.exceptions import (
@@ -46,6 +47,11 @@ def _execute_review(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Role transition is no longer valid for the user's current role",
+        ) from exc
+    except DoctorHasOpenWorkError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=DOCTOR_HAS_OPEN_WORK_DETAIL,
         ) from exc
 
 

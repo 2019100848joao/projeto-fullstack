@@ -15,6 +15,7 @@ from app.core.seed import ensure_base_admin
 from app.main import app
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.enums import UserRole
+from app.modules.auth.exceptions import DoctorHasOpenWorkError
 from app.modules.role_transitions.dependencies import get_role_transition_service
 from app.modules.role_transitions.enums import TransitionStatus
 from app.modules.role_transitions.exceptions import (
@@ -402,3 +403,17 @@ def test_end_to_end_transition_flow_updates_role_and_records_emails() -> None:
         "role_transition_admin_alert",
         "role_transition_approved",
     }
+
+
+def test_approve_returns_409_when_doctor_has_open_work() -> None:
+    app.dependency_overrides[get_current_user] = lambda: make_user(
+        UserRole.ADMIN, ADMIN_ID
+    )
+    app.dependency_overrides[get_role_transition_service] = lambda: (
+        FakeRoleTransitionService(error=DoctorHasOpenWorkError())
+    )
+
+    response = TestClient(app).post(f"/role-transitions/{REQUEST_ID}/approve")
+
+    assert response.status_code == 409
+    assert "exams without a result" in response.json()["detail"]

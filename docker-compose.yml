@@ -25,6 +25,10 @@ services:
       APP_ENV: ${APP_ENV:-development}
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
       RUN_MIGRATIONS_ON_STARTUP: "true"
+      # Optional in development (local defaults); required in any other APP_ENV,
+      # otherwise the base admin is not seeded.
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
       # Inside the network the database is reached by its service name, not localhost.
       DATABASE_URL: postgresql+psycopg://clinic_user:${POSTGRES_PASSWORD:-clinic_password}@database:5432/clinic_db
     ports:

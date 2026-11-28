@@ -10,6 +10,7 @@ from app.main import app
 from app.modules.auth.dependencies import get_auth_service, get_current_user
 from app.modules.auth.enums import UserRole
 from app.modules.auth.exceptions import (
+    DoctorHasOpenWorkError,
     EmailAlreadyRegisteredError,
     InactiveUserError,
     InvalidCredentialsError,
@@ -189,3 +190,18 @@ def test_update_user_role_returns_403_when_not_allowed() -> None:
     )
 
     assert response.status_code == 403
+
+
+def test_update_user_role_returns_409_when_doctor_has_open_work() -> None:
+    app.dependency_overrides[get_current_user] = lambda: make_user(UserRole.ADMIN)
+    app.dependency_overrides[get_auth_service] = lambda: FakeAuthService(
+        error=DoctorHasOpenWorkError()
+    )
+
+    response = TestClient(app).patch(
+        "/auth/01K4SRY37DGE7K5YWWKNB0RESW/role",
+        json={"role": "attendant"},
+    )
+
+    assert response.status_code == 409
+    assert "exams without a result" in response.json()["detail"]

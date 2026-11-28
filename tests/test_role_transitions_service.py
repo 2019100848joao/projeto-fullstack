@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import Base
 from app.modules.auth.enums import UserRole
-from app.modules.auth.exceptions import UserNotFoundError
+from app.modules.auth.exceptions import DoctorHasOpenWorkError, UserNotFoundError
 from app.modules.notifications.enums import EmailEventType
 from app.modules.notifications.models import EmailNotification
 from app.modules.notifications.repository import EmailNotificationRepository
@@ -70,6 +70,10 @@ class FakeEmailNotificationRepository:
 class FakeUserRepository:
     def __init__(self, users: list[User]) -> None:
         self.users = {user.id: user for user in users}
+        self.open_doctor_work = False
+
+    def has_open_doctor_work(self, user_id: str) -> bool:
+        return self.open_doctor_work
 
     def commit(self) -> None:
         pass
@@ -486,3 +490,26 @@ def test_approve_is_atomic_when_notification_fails() -> None:
         assert stored_patient is not None and stored_request is not None
         assert stored_patient.role == UserRole.PATIENT.value
         assert stored_request.status == TransitionStatus.PENDING.value
+
+
+def test_approve_blocks_doctor_with_open_work_from_leaving_the_role() -> None:
+    service, _, user_repository, admin, _ = build_service()
+    doctor = make_user("01DOC", "doc@clinic.com", "Dr. Ana", UserRole.DOCTOR)
+    user_repository.users[doctor.id] = doctor
+    request = service.request_transition(
+        current_user=doctor,
+        payload=RoleTransitionCreate(requested_role=TransitionTargetRole.ATTENDANT),
+    )
+    user_repository.open_doctor_work = True
+
+    with pytest.raises(DoctorHasOpenWorkError):
+        service.approve_transition(admin_user=admin, request_id=request.id)
+
+    assert doctor.role == UserRole.DOCTOR.value
+    assert request.status == TransitionStatus.PENDING.value
+
+    # Once the work is closed, the same request can be approved.
+    user_repository.open_doctor_work = False
+    approved = service.approve_transition(admin_user=admin, request_id=request.id)
+    assert approved.status == TransitionStatus.APPROVED.value
+    assert doctor.role == UserRole.ATTENDANT.value

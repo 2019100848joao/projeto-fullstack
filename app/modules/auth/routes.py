@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.modules.auth.dependencies import CurrentUserDep, get_auth_service
 from app.modules.auth.exceptions import (
+    DoctorHasOpenWorkError,
     EmailAlreadyRegisteredError,
     InactiveUserError,
     InvalidCredentialsError,
@@ -16,6 +17,10 @@ from app.modules.users.models import User
 from app.modules.users.schemas import UserRead
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+DOCTOR_HAS_OPEN_WORK_DETAIL = (
+    "Doctor still has scheduled appointments or exams without a result"
+)
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 
@@ -82,4 +87,9 @@ def update_user_role(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to change this user role",
+        ) from exc
+    except DoctorHasOpenWorkError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=DOCTOR_HAS_OPEN_WORK_DETAIL,
         ) from exc

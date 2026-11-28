@@ -3,6 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.security import create_access_token, hash_password, verify_password
 from app.modules.auth.enums import UserRole
 from app.modules.auth.exceptions import (
+    DoctorHasOpenWorkError,
     EmailAlreadyRegisteredError,
     InactiveUserError,
     InvalidCredentialsError,
@@ -28,6 +29,22 @@ ROLE_CHANGE_RULES: dict[UserRole, dict[UserRole, set[UserRole]]] = {
         UserRole.PATIENT: {UserRole.PATIENT, UserRole.ATTENDANT},
     },
 }
+
+
+def ensure_doctor_work_is_closed(
+    repository: UserRepository,
+    *,
+    user: User,
+    new_role: UserRole,
+) -> None:
+    """Only the requesting doctor can register an exam result, so a doctor who
+    leaves the role with open work would leave it stuck forever."""
+    if (
+        user.role == UserRole.DOCTOR.value
+        and new_role != UserRole.DOCTOR
+        and repository.has_open_doctor_work(user.id)
+    ):
+        raise DoctorHasOpenWorkError
 
 
 class AuthService:
@@ -95,6 +112,12 @@ class AuthService:
 
         if allowed_target_roles is None or new_role not in allowed_target_roles:
             raise RoleChangeNotAllowedError
+
+        ensure_doctor_work_is_closed(
+            self.repository,
+            user=target_user,
+            new_role=new_role,
+        )
 
         target_user.role = new_role.value
         self.repository.commit()

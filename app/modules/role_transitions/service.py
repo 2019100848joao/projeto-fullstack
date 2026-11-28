@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.modules.auth.enums import UserRole
 from app.modules.auth.exceptions import UserNotFoundError
+from app.modules.auth.service import ensure_doctor_work_is_closed
 from app.modules.notifications.service import NotificationService
 from app.modules.role_transitions.enums import TransitionStatus
 from app.modules.role_transitions.exceptions import (
@@ -131,6 +132,11 @@ class RoleTransitionService:
             _ensure_transition_allowed(
                 current_role=target_user.role,
                 requested_role=transition_request.requested_role,
+            )
+            ensure_doctor_work_is_closed(
+                self.user_repository,
+                user=target_user,
+                new_role=UserRole(transition_request.requested_role),
             )
             target_user.role = transition_request.requested_role
 

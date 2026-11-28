@@ -59,6 +59,9 @@ make down
 ```
 
 - `SECRET_KEY` is required and read from `.env` (compose fails fast without it).
+- `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` are passed through from `.env`. With the
+  default `APP_ENV=development` they are optional (local defaults); with any other
+  `APP_ENV` they must be set, otherwise no admin is created.
 - Inside the network the API reaches the database as `database:5432`; the
   `DATABASE_URL` in `.env` (for `localhost`) is only used when running outside Docker.
 - Ports are bound to `127.0.0.1` only. Change them with `DB_PORT` / `API_PORT` if
@@ -141,11 +144,20 @@ Direct role changes (`PATCH /auth/{user_id}/role`):
 - `doctor` can change `attendant` users to `patient` or `attendant`.
 - `attendant` can change `patient` users to `patient` or `attendant`.
 
+A `doctor` cannot leave the role, either through `PATCH /auth/{user_id}/role` or an approved role transition, while they still have `scheduled` appointments or exams without a result: the API answers `409`. Only the doctor who requested an exam can register its result, so that work would otherwise be stuck. Cancel or reschedule the appointments and finish the exams first; the pending transition request can then be approved.
+
 ## Sessions
 
 Access tokens are JWTs signed with `SECRET_KEY` and valid for `ACCESS_TOKEN_EXPIRE_MINUTES` (30 by default).
 Set a long random `SECRET_KEY` in `.env`, for example with `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
 The web frontend renews the token through `POST /auth/refresh` only while the user is active, so idle sessions still expire.
+
+## Known limitations (local environment only)
+
+The project currently runs only locally, so these are accepted for now:
+
+- **`SECRET_KEY` default is accepted in any environment.** If `SECRET_KEY` is not set, JWTs are signed with `change-this-secret-key`, even with `APP_ENV` other than `development`. Docker Compose already requires it; before any shared deployment the app should refuse to start with the default key outside development.
+- **A patient promoted to `doctor` or `attendant` loses access to their own patient history.** `/appointments/me` and the exam listings follow the current role, so their earlier appointments and exam results as a patient are no longer listed for them (the data is kept).
 
 ## Not implemented (possible next steps)
 

@@ -9,6 +9,7 @@ from app.core.config import Settings
 from app.core.security import decode_access_token, hash_password
 from app.modules.auth.enums import UserRole
 from app.modules.auth.exceptions import (
+    DoctorHasOpenWorkError,
     EmailAlreadyRegisteredError,
     InactiveUserError,
     InvalidCredentialsError,
@@ -81,6 +82,7 @@ class FakeUserRepository:
         self.user_document = user_document
         self.created_role: UserRole | None = None
         self.create_calls = 0
+        self.open_doctor_work = False
 
     def get_by_email(self, email: str) -> User | None:
         return self.user
@@ -91,6 +93,9 @@ class FakeUserRepository:
     def list_all(self, *, role: UserRole | None = None) -> list[User]:
         self.listed_role = role
         return [] if self.user is None else [self.user]
+
+    def has_open_doctor_work(self, user_id: str) -> bool:
+        return self.open_doctor_work
 
     def commit(self) -> None:
         pass
@@ -540,3 +545,32 @@ def test_seed_is_skipped_without_credentials(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(seed.settings, "seed_admin_password", None)
 
     assert seed.ensure_base_admin(db=None) is None  # type: ignore[arg-type]
+
+
+def test_admin_cannot_move_doctor_with_open_work_out_of_the_role() -> None:
+    doctor = make_user(UserRole.DOCTOR)
+    repository = FakeUserRepository(doctor)
+    repository.open_doctor_work = True
+    service = AuthService(repository)
+
+    with pytest.raises(DoctorHasOpenWorkError):
+        service.update_user_role(
+            current_user=make_user(UserRole.ADMIN),
+            target_user_id=doctor.id,
+            new_role=UserRole.ATTENDANT,
+        )
+
+    assert doctor.role == UserRole.DOCTOR.value
+
+
+def test_admin_can_move_doctor_without_open_work_out_of_the_role() -> None:
+    doctor = make_user(UserRole.DOCTOR)
+    service = AuthService(FakeUserRepository(doctor))
+
+    updated = service.update_user_role(
+        current_user=make_user(UserRole.ADMIN),
+        target_user_id=doctor.id,
+        new_role=UserRole.ATTENDANT,
+    )
+
+    assert updated.role == UserRole.ATTENDANT.value
