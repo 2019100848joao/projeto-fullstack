@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.modules.auth.enums import UserRole
 from app.modules.auth.service import AuthService
+from app.modules.notifications.dependencies import NotificationServiceDep
 from app.modules.users.models import User
 from app.modules.users.repository import UserRepository
 
@@ -23,8 +24,14 @@ BearerCredentials = Annotated[
 ]
 
 
-def get_auth_service(db: DbSession) -> AuthService:
-    return AuthService(UserRepository(db))
+def get_auth_service(
+    db: DbSession,
+    notification_service: NotificationServiceDep,
+) -> AuthService:
+    return AuthService(
+        repository=UserRepository(db),
+        notification_service=notification_service,
+    )
 
 
 def get_current_user(

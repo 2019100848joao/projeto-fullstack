@@ -52,7 +52,7 @@ class UserDocument(Base):
     value: Mapped[str] = mapped_column(String(255))
     type_id: Mapped[str] = mapped_column(
         String(26),
-        ForeignKey("document_type.id", ondelete="CASCADE"),
+        ForeignKey("document_type.id", ondelete="RESTRICT"),
         index=True,
     )
     document_type: Mapped[DocumentType] = relationship()

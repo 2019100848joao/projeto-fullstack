@@ -5,9 +5,9 @@ services:
     environment:
       POSTGRES_DB: clinic_db
       POSTGRES_USER: clinic_user
-      POSTGRES_PASSWORD: clinic_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clinic_password}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -15,6 +15,35 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - clinic
+
+  api:
+    build: .
+    container_name: clinic_api
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      RUN_MIGRATIONS_ON_STARTUP: "true"
+      # Optional in development (local defaults); required in any other APP_ENV,
+      # otherwise the base admin is not seeded.
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      # Inside the network the database is reached by its service name, not localhost.
+      DATABASE_URL: postgresql+psycopg://clinic_user:${POSTGRES_PASSWORD:-clinic_password}@database:5432/clinic_db
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - clinic
 
 volumes:
   postgres_data:
+
+networks:
+  # Fixed name so the frontend container can join it: docker run --network clinic ...
+  clinic:
+    name: clinic

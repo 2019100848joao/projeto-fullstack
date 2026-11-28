@@ -6,12 +6,15 @@ from fastapi import FastAPI
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.migrations import run_migrations
+from app.core.seed import bootstrap_base_admin
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     if settings.run_migrations_on_startup:
         run_migrations()
+        if settings.seed_admin_on_startup:
+            bootstrap_base_admin()
     yield
 
 

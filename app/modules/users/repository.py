@@ -1,17 +1,18 @@
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
 
+from app.core.database import SqlRepository
+from app.modules.appointments.enums import AppointmentStatus
+from app.modules.appointments.models import Appointment
 from app.modules.auth.enums import UserRole
 from app.modules.document_types.models import DocumentType
+from app.modules.exams.enums import ExamStatus
+from app.modules.exams.models import Exam
 from app.modules.users.exceptions import DocumentAlreadyExistsError
 from app.modules.users.models import User, UserDocument
 
 
-class UserRepository:
-    def __init__(self, db: Session) -> None:
-        self.db = db
-
+class UserRepository(SqlRepository):
     def get_by_id(self, user_id: str) -> User | None:
         return self.db.get(User, user_id)
 
@@ -27,16 +28,36 @@ class UserRepository:
         )
         return self.db.scalar(statement)
 
+    def has_open_doctor_work(self, user_id: str) -> bool:
+        """Scheduled appointments or exams still waiting for this doctor's result."""
+        open_appointment = select(Appointment.id).where(
+            Appointment.doctor_id == user_id,
+            Appointment.status == AppointmentStatus.SCHEDULED.value,
+        )
+        open_exam = select(Exam.id).where(
+            Exam.doctor_id == user_id,
+            Exam.status != ExamStatus.RESULT_AVAILABLE.value,
+        )
+        return bool(
+            self.db.scalar(select(or_(open_appointment.exists(), open_exam.exists())))
+        )
+
+    def lock_active_admin_ids(self) -> list[str]:
+        """Locks the active admins in a fixed order, so two concurrent demotions
+        cannot both see another admin left and remove the last one."""
+        statement = (
+            select(User.id)
+            .where(User.role == UserRole.ADMIN.value, User.is_active.is_(True))
+            .order_by(User.id)
+            .with_for_update()
+        )
+        return list(self.db.scalars(statement))
+
     def list_all(self, *, role: UserRole | None = None) -> list[User]:
         statement = select(User).order_by(User.full_name, User.id)
         if role is not None:
             statement = statement.where(User.role == role.value)
         return list(self.db.scalars(statement))
-
-    def save(self, user: User) -> User:
-        self.db.commit()
-        self.db.refresh(user)
-        return user
 
     def create(
         self,
@@ -53,8 +74,7 @@ class UserRepository:
             role=role.value,
         )
         self.db.add(user)
-        self.db.commit()
-        self.db.refresh(user)
+        self.db.flush()
         return user
 
     def get_document_type_by_id(self, type_id: str) -> DocumentType | None:

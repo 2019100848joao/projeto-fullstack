@@ -23,17 +23,14 @@ def override_auth_service() -> FakeAuthService:
 def test_login_uses_json_body() -> None:
     app.dependency_overrides[get_auth_service] = override_auth_service
 
-    try:
-        client = TestClient(app)
-        response = client.post(
-            "/auth/login",
-            json={
-                "email": "doctor@example.com",
-                "password": "password123",
-            },
-        )
-    finally:
-        app.dependency_overrides.clear()
+    client = TestClient(app)
+    response = client.post(
+        "/auth/login",
+        json={
+            "email": "doctor@example.com",
+            "password": "password123",
+        },
+    )
 
     assert response.status_code == 200
     assert response.json() == {

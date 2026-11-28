@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS ux_role_transition_requests_user_pending;

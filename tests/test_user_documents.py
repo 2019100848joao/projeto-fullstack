@@ -343,9 +343,7 @@ def test_create_document_type_returns_409_when_duplicate() -> None:
     app.dependency_overrides[get_document_type_service] = FakeDocumentTypeService
 
     try:
-        response = TestClient(app).post(
-            "/document-types", json={"type": "DUPLICATE"}
-        )
+        response = TestClient(app).post("/document-types", json={"type": "DUPLICATE"})
     finally:
         app.dependency_overrides.clear()
 
@@ -361,6 +359,7 @@ def test_create_document_type_rejects_blank_type() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 422
+
 
 def test_document_type_repository_rejects_normalized_duplicate() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")

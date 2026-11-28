@@ -43,15 +43,41 @@ make run
 make check
 ```
 
+## Docker
+
+`docker-compose.yml` runs two services on a Docker network named `clinic`:
+
+| Service | Container | Host port | Notes |
+|---|---|---|---|
+| `database` | `clinic_database` | `127.0.0.1:${DB_PORT:-5432}` | Postgres 17, data in the `postgres_data` volume |
+| `api` | `clinic_api` | `127.0.0.1:${API_PORT:-8000}` | Built from the `Dockerfile`, runs as a non-root user, applies migrations on startup |
+
+```bash
+make up        # docker compose up -d --build
+make logs      # API logs
+make down
+```
+
+- `SECRET_KEY` is required and read from `.env` (compose fails fast without it).
+- `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` are passed through from `.env`. With the
+  default `APP_ENV=development` they are optional (local defaults); with any other
+  `APP_ENV` they must be set, otherwise no admin is created.
+- Inside the network the API reaches the database as `database:5432`; the
+  `DATABASE_URL` in `.env` (for `localhost`) is only used when running outside Docker.
+- Ports are bound to `127.0.0.1` only. Change them with `DB_PORT` / `API_PORT` if
+  they are in use, e.g. `API_PORT=8001 make up`.
+- The frontend container joins the same `clinic` network and proxies `/api` to
+  `http://clinic_api:8000` (see the frontend README), so the browser needs no CORS.
+
 ## Database
 
-Start Postgres:
+To run only Postgres (and the API with `make run`):
 
 ```bash
 docker compose up -d database
 ```
 
-Migrations run automatically when the app starts. To run them manually:
+Migrations and the base `admin` seed run automatically when the app starts. With `APP_ENV=development` the seed uses local defaults (`admin@clinic.com` / `Admin123!`); in any other environment `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD` must be set, otherwise the seed is skipped. To run migrations manually:
 
 ```bash
 python -c "from app.core.migrations import run_migrations; run_migrations()"
@@ -61,15 +87,22 @@ python -c "from app.core.migrations import run_migrations; run_migrations()"
 
 - `GET /` returns basic API information.
 - `GET /health` returns health status.
-- `POST /auth/register` creates a user account.
+- `POST /auth/register` creates a `patient` user account and records a registration email.
 - `POST /auth/login` returns a JWT access token from an `email` and `password` JSON body.
 - `GET /auth/me` returns the authenticated user.
 - `POST /auth/refresh` returns a new access token for a still valid one. Expired tokens and inactive users are rejected, so an expired session cannot be extended.
 - `GET /users?role=patient|doctor|attendant|admin` lists users for `admin`, `doctor` and `attendant`, without their documents.
 - `POST /users/me/documents` accepts a nonempty array of documents for the authenticated user (one per type) and returns the created documents. The same value can be used by different users.
 - `GET /document-types` lists available document types without authentication.
+  Migration `009_seed_document_types` loads the basic types, `CPF` and `RG`.
 - `POST /document-types` creates a document type for administrators.
-- `PATCH /auth/{user_id}/role` changes a user role when the authenticated user has permission.
+- `PATCH /auth/{user_id}/role` lets an `admin` change a user role directly.
+- `POST /role-transitions` requests a role transition to `doctor` or `attendant` and records notification emails.
+- `GET /role-transitions/me` lists the authenticated user's own requests, newest first.
+- `GET /role-transitions` lists role transition requests for administrators (optional `?status=` filter).
+- `POST /role-transitions/{request_id}/approve` approves a pending request, updates the user role, and records an approval email.
+- `POST /role-transitions/{request_id}/reject` rejects a pending request and records a rejection email.
+- `GET /notifications/emails` lists recorded email notifications (all for `admin`, own emails for other roles).
 - `POST /appointments`, `GET /appointments`, `POST /appointments/{id}/reschedule` and `POST /appointments/{id}/cancel` let an attendant schedule, list, reschedule and cancel appointments. Patient and doctor must be active users with those roles, and the database rejects two active appointments for the same doctor at the same time. Appointments start on a 30-minute grid (`:00` or `:30`) and must be in the future.
 - `GET /appointments/me` lists the authenticated patient's own appointments, without the attendance record.
 - `GET /appointments/patients` lists the patients the authenticated doctor has attended (completed appointments), each once with the last attendance date, most recent first.
@@ -103,24 +136,13 @@ Supported roles:
 - `doctor`
 - `attendant`
 
-Public registration can create `patient`, `doctor`, or `attendant` users. It cannot create `admin` users.
+Public registration creates `patient` users only. An initial `admin` account is seeded on startup, and users can request a transition to `doctor` or `attendant` for `admin` approval.
 
-> **Known security issue (to be fixed by the role management work):** because `/auth/register` is public, anyone can create an active `doctor` or `attendant` account and read patient data. Public registration should only create `patient` users, and staff accounts should be created or promoted by an admin. The web frontend already sends no role, so it only creates patients.
+Direct role changes (`PATCH /auth/{user_id}/role`) are **admin only**: any other role change goes through a role transition request that an admin approves. Other roles get `403`.
 
-### Creating the first admin (development)
+- The last active `admin` cannot leave the admin role (`409`), so the system is never left without an admin. Concurrent demotions are serialized by locking the active admins, so two admins cannot demote each other at the same time and leave none.
 
-No endpoint creates the first admin. Register a user, then promote it in the database:
-
-```bash
-docker compose exec database psql -U clinic_user -d clinic_db \
-  -c "UPDATE users SET role = 'admin' WHERE email = 'admin@example.com'"
-```
-
-Role changes:
-
-- `admin` can change any user to any role.
-- `doctor` can change `attendant` users to `patient` or `attendant`.
-- `attendant` can change `patient` users to `patient` or `attendant`.
+A `doctor` cannot leave the role, either through `PATCH /auth/{user_id}/role` or an approved role transition, while they still have `scheduled` appointments or exams without a result: the API answers `409`. Only the doctor who requested an exam can register its result, so that work would otherwise be stuck. Cancel or reschedule the appointments and finish the exams first; the pending transition request can then be approved.
 
 ## Sessions
 
@@ -128,9 +150,16 @@ Access tokens are JWTs signed with `SECRET_KEY` and valid for `ACCESS_TOKEN_EXPI
 Set a long random `SECRET_KEY` in `.env`, for example with `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
 The web frontend renews the token through `POST /auth/refresh` only while the user is active, so idle sessions still expire.
 
+## Known limitations (local environment only)
+
+The project currently runs only locally, so these are accepted for now:
+
+- **`SECRET_KEY` default is accepted in any environment.** If `SECRET_KEY` is not set, JWTs are signed with `change-this-secret-key`, even with `APP_ENV` other than `development`. Docker Compose already requires it; before any shared deployment the app should refuse to start with the default key outside development.
+- **A patient promoted to `doctor` or `attendant` loses access to their own patient history.** `/appointments/me` and the exam listings follow the current role, so their earlier appointments and exam results as a patient are no longer listed for them (the data is kept).
+
 ## Not implemented (possible next steps)
 
 - **Password reset by e-mail.** Suggested flow: `POST /auth/password-reset` receives an e-mail and always answers `202`, whether the account exists or not, to avoid revealing who is registered. When it exists, it stores the **hash** of a random single-use token that expires in about 30 minutes and e-mails a link with the token. `POST /auth/password-reset/confirm` checks the token, sets the new password and invalidates the token.
   Free ways to send the e-mail: [Mailpit](https://mailpit.axllent.org/) as a Docker Compose service captures the messages locally (no account, good for demos and tests); Resend and Brevo have free tiers; Gmail SMTP works with an app password. SMTP credentials go in `.env`.
-- Bootstrap of the first admin and an admin screen to manage users and roles.
+- An admin screen to manage users and roles.
 - Business hours: the web frontend only offers 07:00–18:00, but the API accepts any 30-minute slot.

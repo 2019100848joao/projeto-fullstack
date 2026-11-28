@@ -1,16 +1,26 @@
-from collections.abc import Iterator
+import os
+from collections.abc import Generator, Iterator
 from pathlib import Path
 
 import pytest
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session
 
-from app.core.database import Base
+os.environ["RUN_MIGRATIONS_ON_STARTUP"] = "false"
+
+from app.core.database import Base  # noqa: E402
+from app.main import app  # noqa: E402
 
 # Registers every table on Base.metadata.
-from app.modules.appointments.models import Appointment  # noqa: F401
-from app.modules.auth.enums import UserRole
-from app.modules.users.models import User
+from app.modules.appointments.models import Appointment  # noqa: E402, F401
+from app.modules.auth.enums import UserRole  # noqa: E402
+from app.modules.users.models import User  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def clear_dependency_overrides() -> Generator[None]:
+    yield
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture

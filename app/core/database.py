@@ -21,3 +21,19 @@ def get_db() -> Generator[Session]:
     finally:
         db.close()
 
+
+class SqlRepository:
+    """Repositories only add/flush; services end the unit of work.
+
+    All repositories of a request share the same session, so a single
+    ``commit`` persists every change made by a service method atomically.
+    """
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def commit(self) -> None:
+        self.db.commit()
+
+    def rollback(self) -> None:
+        self.db.rollback()
