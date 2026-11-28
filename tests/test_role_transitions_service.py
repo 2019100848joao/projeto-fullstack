@@ -135,8 +135,11 @@ class FakeRoleTransitionRepository:
         self,
         *,
         status: TransitionStatus | None = None,
+        user_id: str | None = None,
     ) -> list[RoleTransitionRequest]:
         items = list(self.requests.values())
+        if user_id is not None:
+            items = [item for item in items if item.user_id == user_id]
         if status is not None:
             items = [item for item in items if item.status == status.value]
         return items
@@ -222,6 +225,21 @@ def test_approve_transition_updates_user_role_and_records_approval_email() -> No
     assert (
         patient_emails[-1].event_type == EmailEventType.ROLE_TRANSITION_APPROVED.value
     )
+
+
+def test_list_for_user_returns_only_that_users_requests() -> None:
+    service, _, _, _, patient = build_service()
+    other = make_user("01OTHER", "other@clinic.com", "Outro", UserRole.PATIENT)
+    own = service.request_transition(
+        current_user=patient,
+        payload=RoleTransitionCreate(requested_role=TransitionTargetRole.DOCTOR),
+    )
+    service.request_transition(
+        current_user=other,
+        payload=RoleTransitionCreate(requested_role=TransitionTargetRole.ATTENDANT),
+    )
+
+    assert [item.id for item in service.list_for_user(patient)] == [own.id]
 
 
 def test_reject_transition_keeps_patient_role_and_records_rejection_email() -> None:

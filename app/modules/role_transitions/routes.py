@@ -69,6 +69,15 @@ def request_role_transition(
         ) from exc
 
 
+@router.get("/me", response_model=list[RoleTransitionRead])
+def list_my_role_transitions(
+    current_user: CurrentUserDep,
+    service: RoleTransitionServiceDep,
+) -> list[RoleTransitionRequest]:
+    """The authenticated user's own requests, newest first."""
+    return service.list_for_user(current_user)
+
+
 @router.get("", response_model=list[RoleTransitionRead])
 def list_role_transitions(
     _admin_user: AdminUserDep,

@@ -95,6 +95,7 @@ python -c "from app.core.migrations import run_migrations; run_migrations()"
 - `POST /document-types` creates a document type for administrators.
 - `PATCH /auth/{user_id}/role` changes a user role when the authenticated user has permission.
 - `POST /role-transitions` requests a role transition to `doctor` or `attendant` and records notification emails.
+- `GET /role-transitions/me` lists the authenticated user's own requests, newest first.
 - `GET /role-transitions` lists role transition requests for administrators (optional `?status=` filter).
 - `POST /role-transitions/{request_id}/approve` approves a pending request, updates the user role, and records an approval email.
 - `POST /role-transitions/{request_id}/reject` rejects a pending request and records a rejection email.

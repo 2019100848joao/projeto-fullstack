@@ -48,6 +48,7 @@ class FakeRoleTransitionService:
     def __init__(self, error: Exception | None = None) -> None:
         self.error = error
         self.status_filter: TransitionStatus | None = None
+        self.listed_user: User | None = None
 
     def request_transition(
         self,
@@ -77,6 +78,18 @@ class FakeRoleTransitionService:
                 user_id=USER_ID,
                 requested_role="doctor",
                 status=(status or TransitionStatus.PENDING).value,
+                created_at=datetime(2026, 9, 9, tzinfo=UTC),
+            )
+        ]
+
+    def list_for_user(self, user: User) -> list[RoleTransitionRequest]:
+        self.listed_user = user
+        return [
+            RoleTransitionRequest(
+                id=REQUEST_ID,
+                user_id=user.id,
+                requested_role="doctor",
+                status=TransitionStatus.PENDING.value,
                 created_at=datetime(2026, 9, 9, tzinfo=UTC),
             )
         ]
@@ -187,6 +200,7 @@ def test_request_role_transition_returns_409_when_pending_exists() -> None:
     [
         ("POST", "/role-transitions", {"requested_role": "doctor"}),
         ("GET", "/role-transitions", None),
+        ("GET", "/role-transitions/me", None),
         ("POST", f"/role-transitions/{REQUEST_ID}/approve", None),
         ("POST", f"/role-transitions/{REQUEST_ID}/reject", None),
     ],
@@ -239,6 +253,21 @@ def test_admin_can_list_role_transitions_by_status() -> None:
 
     assert response.status_code == 200
     assert service.status_filter == TransitionStatus.PENDING
+
+
+@pytest.mark.parametrize(
+    "role", [UserRole.PATIENT, UserRole.DOCTOR, UserRole.ATTENDANT, UserRole.ADMIN]
+)
+def test_any_user_lists_only_their_own_role_transitions(role: UserRole) -> None:
+    service = FakeRoleTransitionService()
+    app.dependency_overrides[get_current_user] = lambda: make_user(role, USER_ID)
+    app.dependency_overrides[get_role_transition_service] = lambda: service
+
+    response = TestClient(app).get("/role-transitions/me")
+
+    assert response.status_code == 200
+    assert service.listed_user.id == USER_ID
+    assert [item["user_id"] for item in response.json()] == [USER_ID]
 
 
 def test_admin_can_approve_role_transition() -> None:

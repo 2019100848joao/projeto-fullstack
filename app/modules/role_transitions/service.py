@@ -77,6 +77,9 @@ class RoleTransitionService:
     ) -> list[RoleTransitionRequest]:
         return self.repository.list_all(status=status)
 
+    def list_for_user(self, user: User) -> list[RoleTransitionRequest]:
+        return self.repository.list_all(user_id=user.id)
+
     def approve_transition(
         self,
         *,
